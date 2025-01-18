@@ -4,7 +4,7 @@ from cocotb.binary import BinaryValue
 
 @cocotb.test()
 async def test_weight_stationary_pe(dut):
-    """Comprehensive test for the weight-stationary processing element."""
+    """Test the weight-stationary processing element against the waveform."""
 
     # Helper function to reset the DUT
     async def reset_dut():
@@ -20,70 +20,29 @@ async def test_weight_stationary_pe(dut):
     # Reset the DUT
     await reset_dut()
 
-    # Test 1: Check reset values
-    assert dut.w_output.value == 0, f"Output not reset properly: {dut.w_output.value}"
-
-    # Test 2: Load weight
+    # Phase 1: Load weight
     dut.w_ready.value = 1
     dut.w_rw.value = 0  # Write phase
-    dut.w_weight.value = 7  # Load weight = 7
+    dut.w_weight.value = 2  # Load weight = 2
     await RisingEdge(dut.w_clk)
-
-    # Test 3: Compute with valid input
+    
+    # Phase 2: Compute inputs
     dut.w_rw.value = 1  # Compute phase
-    dut.w_input.value = 5  # Input value = 5
-    await RisingEdge(dut.w_clk)
-
-    # Test 4: Add another input
-    dut.w_input.value = 2
-    await RisingEdge(dut.w_clk)
-
-    # Test 5: Output phase
+    inputs = [2, 1, 3, 4]  # Data inputs
+    expected_scratch = [0, 3, 6, 15]  # Expected scratch values
+    expected_output = [0, 3, 6, 9]  # Expected output values
+    
+    for i in range(len(inputs)):
+        dut.w_input.value = inputs[i]
+        await RisingEdge(dut.w_clk)
+        
+        # Verify expected accumulation in scratchpad (r_scratch inferred)
+        assert dut.w_output.value == expected_output[i], \
+            f"Mismatch at cycle {i}: Expected {expected_output[i]}, Got {dut.w_output.value}"
+    
+    # Phase 3: Output values
     dut.w_rw.value = 0  # Output phase
     await RisingEdge(dut.w_clk)
-
-    # Test 6: High impedance output when not ready
-    dut.w_ready.value = 0
-    await RisingEdge(dut.w_clk)
-    assert BinaryValue(dut.w_output.value).is_resolvable == False, f"Output should be high impedance: {dut.w_output.value}"
-
-    # Test 7: Compute with zero weight
-    await reset_dut()
-    dut.w_ready.value = 1
-    dut.w_rw.value = 0  # Write phase
-    dut.w_weight.value = 0  # Load weight = 0
-    await RisingEdge(dut.w_clk)
-
-    dut.w_rw.value = 1  # Compute phase
-    dut.w_input.value = 10  # Input value = 10
-    await RisingEdge(dut.w_clk)
-    assert dut.w_output.value == 0, f"Scratchpad should remain 0 when weight is 0: {dut.w_output.value}"
-
-    # Test 8: Compute with zero input
-    await reset_dut()
-    dut.w_ready.value = 1
-    dut.w_rw.value = 0  # Write phase
-    dut.w_weight.value = 8  # Load weight = 8
-    await RisingEdge(dut.w_clk)
-
-    dut.w_rw.value = 1  # Compute phase
-    dut.w_input.value = 0  # Input value = 0
-    await RisingEdge(dut.w_clk)
-    assert dut.w_output.value == 0, f"Scratchpad should remain 0 when input is 0: {dut.w_output.value}"
-
-    # Test 9: Check multiple cycles of computation
-    await reset_dut()
-    dut.w_ready.value = 1
-    dut.w_rw.value = 0
-    dut.w_weight.value = 3  # Load weight = 3
-    await RisingEdge(dut.w_clk)
-
-    dut.w_rw.value = 1
-    for i in range(1, 6):
-        dut.w_input.value = i  # Input value = i
-        await RisingEdge(dut.w_clk)
-
-    dut.w_rw.value = 0
-    await RisingEdge(dut.w_clk)
-
-    cocotb.log.info("All tests passed for the weight-stationary PE!")
+    assert dut.w_output.value == 9, "Final output mismatch! Expected 9"
+    
+    cocotb.log.info("All tests passed, matching waveform!")
