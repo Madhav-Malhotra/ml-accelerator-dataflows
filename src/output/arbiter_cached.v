@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  * Implements cached arbiter for output stationary dataflow
  * (spec: https://docs.google.com/document/d/1bwynsWdD87AS_AJQEDSaEcCtV5cUac0pMMwL_9xpX6k/edit?tab=t.0#heading=h.onnj5tjg6vwi)
+ * WARNING: Hardcoded config data for now. Replace with FIFO lookup later
  */
 
 module arbiter_cached #(
     parameter MAIN_MEM_ADDR_WIDTH = 32,             // Main memory address width
     parameter NUM_CORES = 4,                        // Number of PE array cores
-    parameter BURST_WIDTH = 6,                      // Burst length bit width
-    parameter CONFIG_LEN = 8                        // Number of config items
+    parameter BURST_WIDTH = 6                       // Burst length bit width
+    parameter CONFIG_WIDTH = 16                     // Config data bit width
 )(
     input wire w_clock,                             // Clock
     input wire w_ready,                             // Active high enable
@@ -19,6 +20,7 @@ module arbiter_cached #(
     output wire w_rw,                               // Main mem read/write
     output wire [NUM_CORES-1:0] w_grant,            // Grant to each PE core
     output wire [BURST_WIDTH-1:0] w_burst,          // Burst length for data bus
+                                                    // Add FIFO inputs later
 );
 
     // Output signals (raw before tristate buffers)
@@ -31,17 +33,23 @@ module arbiter_cached #(
     reg [NUM_CORES-1:0] r_req;                      // Current captured requests
     reg [NUM_CORES-1:0] r_load;                     // To load or unload cores
     reg [2:0] r_state;                              // State machine state
+    reg [CONFIG_WIDTH-1:0] r_count;                 // Burst counter
     integer sel;                                    // Selected core index
 
-    // Hardcoded arbiter config (CONFIG_LEN burst lengths, memory addresses)
-    reg [CONFIG_LEN-1:0] r_config_burst_psum [NUM_CORES-1:0];
-    reg [CONFIG_LEN-1:0] r_config_addr_psum [NUM_CORES-1:0];
-    reg [CONFIG_LEN-1:0] r_config_burst_core_config [NUM_CORES-1:0];
-    reg [CONFIG_LEN-1:0] r_config_addr_core_config [NUM_CORES-1:0];
-    reg [CONFIG_LEN-1:0] r_config_burst_core_weights [NUM_CORES-1:0];
-    reg [CONFIG_LEN-1:0] r_config_addr_core_weights [NUM_CORES-1:0];
-    reg [CONFIG_LEN-1:0] r_config_burst_core_act [NUM_CORES-1:0];
-    reg [CONFIG_LEN-1:0] r_config_addr_core_act [NUM_CORES-1:0];
+    // These hold config data (burst lengths, memory addresses)
+    // They need to be read from a FIFO in the arbitrate state. 
+    // For now, they're hardcoded
+    reg [CONFIG_WIDTH-1:0] r_config_burst_psum;
+    reg [CONFIG_WIDTH-1:0] r_config_addr_psum;
+
+    reg [CONFIG_WIDTH-1:0] r_config_burst_core_config;
+    reg [CONFIG_WIDTH-1:0] r_config_addr_core_config;
+
+    reg [CONFIG_WIDTH-1:0] r_config_burst_core_weights;
+    reg [CONFIG_WIDTH-1:0] r_config_addr_core_weights;
+
+    reg [CONFIG_WIDTH-1:0] r_config_burst_core_act;
+    reg [CONFIG_WIDTH-1:0] r_config_addr_core_act;
 
 
     // State machine
@@ -56,11 +64,12 @@ module arbiter_cached #(
                 r_state <= 2;
 
                 // Arbitrate state (select one request)
-                if (r_reg != 0) begin
+                if (r_req != 0) begin
                     r_state <= 3;
 
                     // r_state == 3 occurs next clock cycle when sel is set
-                    if (r_state == 3) begin
+                    // so r_state will STAY as 3 in cycle 1, move on in cylce 2
+                    if (r_state != 2) begin
                         // Core write state (core writes to mem)
                         if (r_load[sel]) begin
                             r_state <= 4;
@@ -82,21 +91,30 @@ module arbiter_cached #(
     // Register assignments based on state
     always @(posedge w_clock) begin
         // Reset state
-        r_req <= 0;
-        r_load <= 0;
-        r_grant <= 0;
-        r_burst <= 0;
-        r_addr <= 0;
-        r_rw <= 0;
+        if (r_state == 0) begin
+            r_req <= 0;
+            r_load <= 0;
+            r_grant <= 0;
+            r_burst <= 0;
+            r_addr <= 0;
+            r_rw <= 0;
+            r_count <= 0;
+            sel = 0;
 
         // Req idle state
-        if else (r_state == 1) begin
+        end else (r_state == 1) begin
+            r_req <= 0;
             r_load <= r_load;
-
+            
         // Req lock state
         end else (r_state == 2) begin
             r_req <= w_req;
             r_load <= r_load;
+            r_grant <= 0;
+            r_burst <= 0;
+            r_addr <= 0;
+            r_rw <= 0;
+            r_count <= 0;
 
         // Arbitrate state
         end else (r_state == 3) begin
@@ -108,10 +126,55 @@ module arbiter_cached #(
             end
             r_grant[sel] <= 1;
             r_load[sel] <= ~r_load[sel];
+            r_rw <= 0;
+
+            // Hardcoded config data for now. Replace with FIFO lookup later
+            r_config_burst_psum <= 16;
+            r_config_addr_psum <= 0;
+
+            r_config_burst_core_config <= 16;
+            r_config_addr_core_config <= 0;
+
+            r_config_burst_core_weights <= 16;
+            r_config_addr_core_weights <= 0;
+
+            r_config_burst_core_act <= 16;
+            r_config_addr_core_act <= 0;
 
         // Core write state
         end else (r_state == 4) begin
-            
+            // While not done with entire burst transfer
+            if (r_count < r_config_burst_core_psum + 1) begin
+                r_count <= r_count + 1;
+                r_load <= r_load;
+                r_grant <= r_grant;
+                r_rw <= 0;
+
+                if (r_count == 0) begin
+                    r_req <= r_req;
+                    r_burst <= r_config_burst_core_psum;
+                    r_addr <= r_config_addr_core_psum - 1;
+                end else if (r_count == r_config_burst_core_psum) begin
+                    r_req[sel] <= ~r_req[sel];
+                    r_burst <= 0;
+                    r_addr <= r_addr + 1;
+                end else begin
+                    r_req <= r_req;
+                    r_burst <= 0;
+                    r_addr <= r_addr + 1;
+                end
+
+
+            // Go to the lock or arbitrate state respectively
+            end else begin
+                r_count <= 0;
+
+                if (r_req == 0) begin
+                    r_state <= 2;
+                end else begin
+                    r_state <= 3;
+                end
+            end
 
         // Core read state
         end else (r_state == 5) begin
