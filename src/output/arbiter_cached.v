@@ -33,6 +33,7 @@ module arbiter_cached #(
     reg [NUM_CORES-1:0] r_req;                      // Current captured requests
     reg [NUM_CORES-1:0] r_load;                     // To load or unload cores
     reg [2:0] r_state;                              // State machine state
+    reg [2:0] r_read_stage;                         // Read config, wgts, or acts
     reg [CONFIG_WIDTH-1:0] r_count;                 // Burst counter
     integer sel;                                    // Selected core index
 
@@ -100,6 +101,7 @@ module arbiter_cached #(
             r_rw <= 0;
             r_count <= 0;
             sel = 0;
+            r_read_stage <= 0;
 
         // Req idle state
         end else (r_state == 1) begin
@@ -115,6 +117,7 @@ module arbiter_cached #(
             r_addr <= 0;
             r_rw <= 0;
             r_count <= 0;
+            r_read_stage <= 0;
 
         // Arbitrate state
         end else (r_state == 3) begin
@@ -127,6 +130,8 @@ module arbiter_cached #(
             r_grant[sel] <= 1;
             r_load[sel] <= ~r_load[sel];
             r_rw <= 0;
+            r_read_stage <= 0;
+            r_count <= 0;
 
             // Hardcoded config data for now. Replace with FIFO lookup later
             r_config_burst_psum <= 16;
@@ -143,45 +148,82 @@ module arbiter_cached #(
 
         // Core write state
         end else (r_state == 4) begin
-            // While not done with entire burst transfer
-            if (r_count < r_config_burst_core_psum + 1) begin
-                r_count <= r_count + 1;
-                r_load <= r_load;
-                r_grant <= r_grant;
-                r_rw <= 0;
-
-                if (r_count == 0) begin
-                    r_req <= r_req;
-                    r_burst <= r_config_burst_core_psum;
-                    r_addr <= r_config_addr_core_psum - 1;
-                end else if (r_count == r_config_burst_core_psum) begin
-                    r_req[sel] <= ~r_req[sel];
-                    r_burst <= 0;
-                    r_addr <= r_addr + 1;
-                end else begin
-                    r_req <= r_req;
-                    r_burst <= 0;
-                    r_addr <= r_addr + 1;
-                end
-
-
-            // Go to the lock or arbitrate state respectively
-            end else begin
-                r_count <= 0;
-
-                if (r_req == 0) begin
-                    r_state <= 2;
-                end else begin
-                    r_state <= 3;
-                end
+            r_read_stage <= 3;
+            if (r_read_stage == 3) begin
+                handle_burst_transfer(r_config_burst_core_psum, r_config_addr_core_psum, 1'b0, r_read_stage);
             end
 
         // Core read state
         end else (r_state == 5) begin
-
+            if (r_read_stage == 0) begin
+                handle_burst_transfer(r_config_burst_core_config, r_config_addr_core_config, 1'b1, r_read_stage);
+            end else if (r_read_stage == 1) begin
+                handle_burst_transfer(r_config_burst_core_weights, r_config_addr_core_weights, 1'b1, r_read_stage);
+            end else if (r_read_stage == 2) begin
+                handle_burst_transfer(r_config_burst_core_act, r_config_addr_core_act, 1'b1, r_read_stage);
+            end
+            
         end
     end
 
     // Combinational assignment based on state
 
 endmodule
+
+// Reusable code to handle a data transfer with a specified address/burst
+task handle_burst_transfer;
+    input [CONFIG_WIDTH-1:0] config_burst;
+    input [MAIN_MEM_ADDR_WIDTH-1:0] config_addr;
+    input rw;
+    inout r_read_stage;
+    begin
+        // Handle data transfer
+        if (r_count < config_burst + 1) begin
+            r_count <= r_count + 1;
+            r_load <= r_load;
+            r_grant <= r_grant;
+            r_rw <= rw;
+
+            // First step (sending burst info)
+            if (r_count == 0) begin
+                r_req <= r_req;
+                r_burst <= config_burst;
+                r_addr <= config_addr - 1;
+            // Ending step
+            end else if (r_count == config_burst) begin
+                // If last stage of read or write (encoded as 3),
+                // then toggle the request signal as handled
+                if (r_read_stage == 2 || r_read_stage == 3) begin
+                    r_req[sel] <= ~r_req[sel];
+                end else begin
+                    r_req <= r_req;
+                end
+                r_burst <= 0;
+                r_addr <= r_addr + 1;
+            // Intermediate steps (just transferring one address after next)
+            end else begin
+                r_req <= r_req;
+                r_burst <= 0;
+                r_addr <= r_addr + 1;
+            end
+        
+        // After transfer is done, figure out next state
+        end else if (r_count == config_burst + 1) begin
+            r_count <= 0;
+
+            // After write, go to lock or arbitrate state respectively
+            if (r_read_stage == 2 || r_read_stage == 3) begin
+                if (r_req == 0) begin
+                    r_state <= 2;
+                end else begin
+                    r_state <= 3;
+                end
+            end
+            
+            // After read, go to next read stage
+            if (r_read_stage == 0 || r_read_stage == 1) begin
+                r_read_stage <= r_read_stage + 1;
+            end
+        end
+    end
+endtask
