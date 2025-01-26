@@ -167,6 +167,11 @@ module arbiter_cached #(
     end
 
     // Combinational assignment based on state
+    // Basically, we add tristate buffers to the data bus outputs when not used
+    assign w_burst = ( (r_state == 4 || r_state == 5) && r_count == 0) ? r_burst : 1'bz;
+    assign w_addr = ( (r_state == 4 || r_state == 5) && r_count != 0) ? r_addr : 1'bz;
+    assign w_rw = ( (r_state == 4 || r_state == 5) && r_count != 0) ? r_rw : 1'bz;
+    assign w_grant = r_grant; // not a data bus output so no tristate buffer needed
 
 endmodule
 
