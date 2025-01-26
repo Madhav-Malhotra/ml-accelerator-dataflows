@@ -47,14 +47,14 @@ module arbiter_cached #(
     reg [CONFIG_WIDTH-1:0] r_config_burst_psum;
     reg [CONFIG_WIDTH-1:0] r_config_addr_psum;
 
-    reg [CONFIG_WIDTH-1:0] r_config_burst_core_config;
-    reg [CONFIG_WIDTH-1:0] r_config_addr_core_config;
+    reg [CONFIG_WIDTH-1:0] r_config_burst_config;
+    reg [CONFIG_WIDTH-1:0] r_config_addr_config;
 
-    reg [CONFIG_WIDTH-1:0] r_config_burst_core_weights;
-    reg [CONFIG_WIDTH-1:0] r_config_addr_core_weights;
+    reg [CONFIG_WIDTH-1:0] r_config_burst_weights;
+    reg [CONFIG_WIDTH-1:0] r_config_addr_weights;
 
-    reg [CONFIG_WIDTH-1:0] r_config_burst_core_act;
-    reg [CONFIG_WIDTH-1:0] r_config_addr_core_act;
+    reg [CONFIG_WIDTH-1:0] r_config_burst_act;
+    reg [CONFIG_WIDTH-1:0] r_config_addr_act;
 
 
     // State machine
@@ -99,6 +99,19 @@ module arbiter_cached #(
             sel = 0;
             r_read_stage <= 0;
 
+            // Hardcoded config data for now.
+            r_config_burst_psum <= 16;
+            r_config_addr_psum <= 0;
+
+            r_config_burst_config <= 16;
+            r_config_addr_config <= 0;
+
+            r_config_burst_weights <= 16;
+            r_config_addr_weights <= 0;
+
+            r_config_burst_act <= 16;
+            r_config_addr_act <= 0;
+
         // Req idle state
         end else if (r_state == 1) begin
             r_req <= 0;
@@ -133,30 +146,30 @@ module arbiter_cached #(
             r_config_burst_psum <= 16;
             r_config_addr_psum <= 0;
 
-            r_config_burst_core_config <= 16;
-            r_config_addr_core_config <= 0;
+            r_config_burst_config <= 16;
+            r_config_addr_config <= 0;
 
-            r_config_burst_core_weights <= 16;
-            r_config_addr_core_weights <= 0;
+            r_config_burst_weights <= 16;
+            r_config_addr_weights <= 0;
 
-            r_config_burst_core_act <= 16;
-            r_config_addr_core_act <= 0;
+            r_config_burst_act <= 16;
+            r_config_addr_act <= 0;
 
         // Core write state
         end else if (r_state == 4) begin
             r_read_stage <= 3;
             if (r_read_stage == 3) begin
-                handle_burst_transfer(r_config_burst_core_psum, r_config_addr_core_psum, 1'b0, r_read_stage);
+                handle_burst_transfer(r_config_burst_psum, r_config_addr_psum, 1'b0, r_read_stage);
             end
 
         // Core read state
         end else if (r_state == 5) begin
             if (r_read_stage == 0) begin
-                handle_burst_transfer(r_config_burst_core_config, r_config_addr_core_config, 1'b1, r_read_stage);
+                handle_burst_transfer(r_config_burst_config, r_config_addr_config, 1'b1, r_read_stage);
             end else if (r_read_stage == 1) begin
-                handle_burst_transfer(r_config_burst_core_weights, r_config_addr_core_weights, 1'b1, r_read_stage);
+                handle_burst_transfer(r_config_burst_weights, r_config_addr_weights, 1'b1, r_read_stage);
             end else if (r_read_stage == 2) begin
-                handle_burst_transfer(r_config_burst_core_act, r_config_addr_core_act, 1'b1, r_read_stage);
+                handle_burst_transfer(r_config_burst_act, r_config_addr_act, 1'b1, r_read_stage);
             end
             
         end
