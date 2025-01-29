@@ -39,7 +39,7 @@ module arbiter_cached #(
     reg [CONFIG_WIDTH-1:0] r_count;                 // Burst counter
     integer sel;                                    // Selected core index
     integer i;                                      // Generic counter
-    reg r_burst_done;                                 // Burst transfer done flag
+    reg r_burst_done;                               // Burst transfer done flag
 
     // These hold config data (burst lengths, memory addresses)
     // They need to be read from a FIFO in the arbitrate state. 
