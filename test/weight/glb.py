@@ -6,15 +6,16 @@
  * (spec: https://docs.google.com/document/d/1bwynsWdD87AS_AJQEDSaEcCtV5cUac0pMMwL_9xpX6k/edit?tab=t.0#heading=h.ttrwxbq2s3f6)
 """
 
+import json
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, Timer
-from cocotb.result import TestFailure
 from cocotb.binary import BinaryValue
+from cocotb.triggers import RisingEdge, Timer
 
+with open("parameters.json") as f:
+    params = json.load(f)
 
-NUM_ROWS = 64
-NUM_BITS = 8
+OUT_MEM_NUM_ROWS = params["OUT_MEM_NUM_ROWS"]
 
 
 def not_resolvable(value: str) -> bool:
@@ -30,6 +31,7 @@ async def initialize_dut(dut):
     dut.w_rw = 0
     dut.w_address = 0
     dut.w_data_in = 0
+    dut.w_add = 0
     await Timer(10, units="ns")
 
 
@@ -55,7 +57,7 @@ async def test_reset_state(dut):
     # Check memory contents
     # Note: Not all simulators allow direct access to memory arrays
     try:
-        for i in range(NUM_ROWS):
+        for i in range(OUT_MEM_NUM_ROWS):
             mem_val = int(dut.r_Q[i].value)
             assert mem_val == 0, f"Memory location {i} should be 0 but is {mem_val}"
     except AttributeError:
@@ -65,8 +67,8 @@ async def test_reset_state(dut):
 
 
 @cocotb.test()
-async def test_read_memory(dut):
-    """Test how the memory reads data"""
+async def test_read_memory_overwrite(dut):
+    """Test how the memory reads data when overwriting prior data"""
     # Start the clock
     cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
 
@@ -110,6 +112,60 @@ async def test_read_memory(dut):
 
 
 @cocotb.test()
+async def test_read_memory_add(dut):
+    """Test how the memory reads data when adding onto prior data"""
+    # Start the clock
+    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
+
+    # Initialize signals
+    await initialize_dut(dut)
+
+    # Wait a few clock cycles after reset
+    for _ in range(2):
+        await RisingEdge(dut.w_clock)
+
+    # Enable memory operations
+    dut.w_ready = 1
+    dut.w_rw = 1  # Read mode
+    dut.w_add = 1  # Add mode
+
+    # Test reading data into multiple addresses
+    test_data = [
+        (0x0, 0xAA),  # Address 0,
+        (0x0, 0x01),
+        (0x0, 0x01),
+        (0x1F, 0x55),  # Address 31
+        (0x1F, 0x11),
+        (0x1F, 0x11),
+        (0x3F, 0xFF),  # Address 63
+        (0x3F, 0xFF),  # Shouldn't overflow since GLB data width is 16 bits.
+        (0x3F, 0xFF),
+    ]
+
+    for addr, data in test_data:
+        dut.w_address = addr
+        dut.w_data_in = data
+        prev_val = int(dut.r_Q[addr].value)
+
+        await RisingEdge(dut.w_clock)
+        await Timer(1, units="ns")  # small delay for nonblocking assignment
+
+        # Verify data was read into memory (if memory array is accessible)
+        try:
+            read_val = int(dut.r_Q[addr].value)
+            assert read_val == (
+                data + prev_val
+            ), f"Memory location {addr} should be {data:02x} but is {read_val:02x}"
+        except AttributeError:
+            dut._log.info(f"Cannot directly verify write to address {addr}")
+
+    # Check that output remains high-Z while memory reads data
+    assert not_resolvable(
+        dut.w_data_out.value.binstr
+    ), "Output should be high-Z during read operations"
+
+
+@cocotb.test()
 async def test_write_memory(dut):
     """Test writing data from memory to output"""
     # Start the clock
@@ -128,9 +184,9 @@ async def test_write_memory(dut):
 
     # Write test pattern
     test_data = {
-        0x0: 0xAA,  # Address 0, data 0xAA
-        0x1F: 0x55,  # Address 31, data 0x55
-        0x3F: 0xFF,  # Address 63, data 0xFF
+        0x0: 0xAA,  # Address 0
+        0x1F: 0x55,  # Address 31
+        0x3F: 0xFF,  # Address 63
     }
 
     for addr, data in test_data.items():
@@ -147,18 +203,8 @@ async def test_write_memory(dut):
     for addr, expected_data in test_data.items():
         dut.w_address = addr
 
-        dut._log.info(f"w_ready: {dut.w_ready.value}")
-        dut._log.info(f"w_rw: {dut.w_rw.value}")
-        dut._log.info(f"r_data_out: {dut.r_data_out.value}")
-        dut._log.info(f"w_data_out: {dut.w_data_out.value.binstr}")
-
         await RisingEdge(dut.w_clock)
         await Timer(15, units="ns")  # Small delay to allow output to stabilize
-
-        dut._log.info(f"w_ready: {dut.w_ready.value}")
-        dut._log.info(f"w_rw: {dut.w_rw.value}")
-        dut._log.info(f"r_data_out: {dut.r_data_out.value}")
-        dut._log.info(f"w_data_out: {dut.w_data_out.value.binstr}")
 
         written_val = int(dut.w_data_out.value)
         assert (

@@ -6,12 +6,11 @@
  * (spec: https://docs.google.com/document/d/1bwynsWdD87AS_AJQEDSaEcCtV5cUac0pMMwL_9xpX6k/edit?tab=t.0#heading=h.ttrwxbq2s3f6)
 """
 
+import json
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import RisingEdge, Timer
-from cocotb.result import TestFailure
 from cocotb.binary import BinaryValue
-import json
+from cocotb.triggers import RisingEdge, Timer
 
 with open("parameters.json") as f:
     params = json.load(f)
@@ -103,7 +102,7 @@ async def test_read_memory(dut):
                 read_val == data
             ), f"Memory location {addr} should be {data:02x} but is {read_val:02x}"
         except AttributeError:
-            dut._log.info(f"Cannot directly verify write to address {addr}")
+            dut._log.warning(f"Cannot directly verify write to address {addr}")
 
     # Check that output remains high-Z while memory reads data
     assert not_resolvable(
@@ -149,18 +148,8 @@ async def test_write_memory(dut):
     for addr, expected_data in test_data.items():
         dut.w_address = addr
 
-        dut._log.info(f"w_ready: {dut.w_ready.value}")
-        dut._log.info(f"w_rw: {dut.w_rw.value}")
-        dut._log.info(f"r_data_out: {dut.r_data_out.value}")
-        dut._log.info(f"w_data_out: {dut.w_data_out.value.binstr}")
-
         await RisingEdge(dut.w_clock)
         await Timer(15, units="ns")  # Small delay to allow output to stabilize
-
-        dut._log.info(f"w_ready: {dut.w_ready.value}")
-        dut._log.info(f"w_rw: {dut.w_rw.value}")
-        dut._log.info(f"r_data_out: {dut.r_data_out.value}")
-        dut._log.info(f"w_data_out: {dut.w_data_out.value.binstr}")
 
         written_val = int(dut.w_data_out.value)
         assert (

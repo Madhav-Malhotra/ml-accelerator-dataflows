@@ -2,7 +2,8 @@
  * Copyright (c) 2024 WAT.ai Chip Team
  * Author: Zoe Lussier-Gibbons
  * SPDX-License-Identifier: Apache-2.0
- * Implements memory for single PE
+ * Implements row-addressable read-write memory
+ * Spec: https://docs.google.com/document/d/1bwynsWdD87AS_AJQEDSaEcCtV5cUac0pMMwL_9xpX6k/edit?tab=t.0#heading=h.ttrwxbq2s3f6
  */
 
 `include "parameters.vh"
