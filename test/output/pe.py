@@ -12,6 +12,7 @@ OUT_MEM_NUM_ROWS = params["OUT_MEM_NUM_ROWS"]
 OUT_PE_WEIGHT_WIDTH = params["OUT_PE_WEIGHT_WIDTH"]
 OUT_PE_INPUT_WIDTH = params["OUT_PE_INPUT_WIDTH"]
 OUT_PE_FWD_WIDTH = params["OUT_PE_FWD_WIDTH"]
+OUT_PE_SCRATCH_WIDTH = params["OUT_PE_SCRATCH_WIDTH"]
 COCOTB_SEED = params["COCOTB_SEED"]
 COCOTB_CLOCK = params["COCOTB_CLOCK_NS"]
 
@@ -20,6 +21,48 @@ COCOTB_CLOCK = params["COCOTB_CLOCK_NS"]
 def not_resolvable(value: str) -> bool:
     """Check if a value is not resolvable"""
     return "x" in value.lower() or "z" in value.lower()
+
+
+def detect_overflow(
+    prev_val: int, operand: int, result: int, width: int
+) -> tuple[bool, str]:
+    """
+    Detect if an addition overflow occurred
+
+    Parameters
+    ----------
+    prev_val: int
+        Previous value before addition
+    operand: int
+        Operand added to the previous value
+    result: int
+        Actual result of the addition
+    width: int
+        Bit width of the operands
+
+    Returns
+    -------
+    bool:
+        True if overflow occurred
+    str:
+        Message describing the overflow if it occurred
+    """
+    expected_sum = prev_val + operand
+    actual_sum = result
+
+    # Check if overflow occurred by comparing with maximum value
+    max_val = (1 << width) - 1
+    if expected_sum != actual_sum and expected_sum > max_val:
+        msg = f"""
+OVERFLOW DETECTED:
+Previous Value: {prev_val:d} (0b{prev_val:0{width}b})
+Added Operand:  {operand:d} (0b{operand:0{width}b})
+Expected Sum:   {expected_sum:d} (0b{bin(expected_sum)[2:]})
+Actual Result:  {actual_sum:d} (0b{actual_sum:0{width}b})
+Max Value:      {max_val:d} (0b{max_val:0{width}b})
+            """
+        return (True, msg)
+    return (False, "")
 
 
 class PETest:
@@ -129,9 +172,9 @@ async def test_pipeline_timing(dut):
         inp = random.randint(0, (2**OUT_PE_INPUT_WIDTH) - 1)
 
         # Potentially gate values
-        if random.random() < 0.5:
+        if random.random() < 0.2:
             wgt = 0
-        if random.random() < 0.5:
+        if random.random() < 0.2:
             inp = 0
 
         weights_vector.append(wgt)
@@ -150,16 +193,25 @@ async def test_pipeline_timing(dut):
         await RisingEdge(dut.w_clock)
         await Timer(1, units="ns")
 
+        prod = wgt * inp
         assert (
-            dut.r_pipeline.value == wgt * inp
-        ), f"Pipeline should be {wgt*inp}. Got: {dut.r_pipeline.value}"
+            dut.r_pipeline.value == prod
+        ), f"Pipeline should be {prod}. Got: {dut.r_pipeline.value}"
 
-        # How to account for addition overflow?
-        assert (
-            dut.r_scratch.value == prev
-        ), f"Scratch should be {prev}. Got: {dut.r_scratch.value}"
+        # Check for overflow in scratchpad
+        overflow, msg = detect_overflow(
+            prev, prod, int(dut.r_scratch.value), OUT_PE_SCRATCH_WIDTH
+        )
 
-        prev += wgt * inp
+        if overflow:
+            dut._log.error(msg)
+            raise ValueError
+        else:
+            assert (
+                dut.r_scratch.value == prev
+            ), f"Scratch should be {prev}. Got: {dut.r_scratch.value}"
+
+            prev += prod
 
     # Check final scratchpad value
     await RisingEdge(dut.w_clock)

@@ -53,7 +53,7 @@ module pe #(
 
             // If read, then initiate pipelined multiplication with data gating
             if (w_rw) begin
-                if (r_wgt != {OUT_PE_WEIGHT_WIDTH{1'b0}} && r_inp != {OUT_PE_INPUT_WIDTH{1'b0}}) begin
+                if (w_weight != {OUT_PE_WEIGHT_WIDTH{1'b0}} && w_input != {OUT_PE_INPUT_WIDTH{1'b0}}) begin
                     r_pipeline <= w_weight * w_input;
                 end 
                 // Stream enabled or disabled
