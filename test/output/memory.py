@@ -11,10 +11,12 @@ from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, Timer
 from cocotb.result import TestFailure
 from cocotb.binary import BinaryValue
+import json
 
+with open("parameters.json") as f:
+    params = json.load(f)
 
-NUM_ROWS = 64
-NUM_BITS = 8
+OUT_MEM_NUM_ROWS = params["OUT_MEM_NUM_ROWS"]
 
 
 def not_resolvable(value: str) -> bool:
@@ -55,7 +57,7 @@ async def test_reset_state(dut):
     # Check memory contents
     # Note: Not all simulators allow direct access to memory arrays
     try:
-        for i in range(NUM_ROWS):
+        for i in range(OUT_MEM_NUM_ROWS):
             mem_val = int(dut.r_Q[i].value)
             assert mem_val == 0, f"Memory location {i} should be 0 but is {mem_val}"
     except AttributeError:

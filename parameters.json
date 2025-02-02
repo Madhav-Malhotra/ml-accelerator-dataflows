@@ -1,0 +1,13 @@
+{
+    "OUT_MEM_NUM_ROWS": 64,
+    "OUT_MEM_NUM_BITS": 8,
+
+    "OUT_GLB_NUM_ROWS": 64,
+    "OUT_GLB_NUM_BITS": 16,
+
+    "WGT_MEM_NUM_ROWS": 64,
+    "WGT_MEM_NUM_BITS": 8,
+    
+    "WGT_GLB_NUM_ROWS": 64,
+    "WGT_GLB_NUM_BITS": 16
+}
