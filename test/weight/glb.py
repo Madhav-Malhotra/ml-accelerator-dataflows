@@ -14,8 +14,8 @@ from cocotb.triggers import RisingEdge, Timer
 
 with open("parameters.json") as f:
     params = json.load(f)
-
 OUT_MEM_NUM_ROWS = params["OUT_MEM_NUM_ROWS"]
+COCOTB_CLOCK = params["COCOTB_CLOCK_NS"]
 
 
 def not_resolvable(value: str) -> bool:
@@ -38,7 +38,9 @@ async def initialize_dut(dut):
 @cocotb.test()
 async def test_reset_state(dut):
     # Start the clock
-    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())  # 50 MHz clock
+    cocotb.start_soon(
+        Clock(dut.w_clock, COCOTB_CLOCK, units="ns").start()
+    )  # 50 MHz clock
 
     # Initialize signals
     await initialize_dut(dut)
@@ -70,7 +72,7 @@ async def test_reset_state(dut):
 async def test_read_memory_overwrite(dut):
     """Test how the memory reads data when overwriting prior data"""
     # Start the clock
-    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.w_clock, COCOTB_CLOCK, units="ns").start())
 
     # Initialize signals
     await initialize_dut(dut)
@@ -115,7 +117,7 @@ async def test_read_memory_overwrite(dut):
 async def test_read_memory_add(dut):
     """Test how the memory reads data when adding onto prior data"""
     # Start the clock
-    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.w_clock, COCOTB_CLOCK, units="ns").start())
 
     # Initialize signals
     await initialize_dut(dut)
@@ -169,7 +171,7 @@ async def test_read_memory_add(dut):
 async def test_write_memory(dut):
     """Test writing data from memory to output"""
     # Start the clock
-    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.w_clock, COCOTB_CLOCK, units="ns").start())
 
     # Initialize signals
     await initialize_dut(dut)
@@ -216,7 +218,7 @@ async def test_write_memory(dut):
 async def test_high_z_behavior(dut):
     """Test behavior when w_rw is in high-Z state"""
     # Start the clock
-    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.w_clock, COCOTB_CLOCK, units="ns").start())
 
     # Initialize signals
     await initialize_dut(dut)

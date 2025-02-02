@@ -1,84 +1,295 @@
+import json
+import random
 import cocotb
-from cocotb.triggers import RisingEdge
+from cocotb.clock import Clock
 from cocotb.binary import BinaryValue
+from cocotb.triggers import RisingEdge, Timer
+
+# Init parameters
+with open("parameters.json") as f:
+    params = json.load(f)
+OUT_MEM_NUM_ROWS = params["OUT_MEM_NUM_ROWS"]
+OUT_PE_WEIGHT_WIDTH = params["OUT_PE_WEIGHT_WIDTH"]
+OUT_PE_INPUT_WIDTH = params["OUT_PE_INPUT_WIDTH"]
+OUT_PE_FWD_WIDTH = params["OUT_PE_FWD_WIDTH"]
+COCOTB_SEED = params["COCOTB_SEED"]
+COCOTB_CLOCK = params["COCOTB_CLOCK_NS"]
+
+
+# Helper functions
+def not_resolvable(value: str) -> bool:
+    """Check if a value is not resolvable"""
+    return "x" in value.lower() or "z" in value.lower()
+
+
+class PETest:
+    def __init__(self, dut):
+        self.dut = dut
+        self.log = dut._log
+        self.rng = random.Random(COCOTB_SEED)
+
+    async def reset(self):
+        """Reset the PE by clearing ready signal"""
+        self.dut.w_ready.value = 0
+        await RisingEdge(self.dut.w_clock)
+        await Timer(1, units="ns")
+
+    async def initialize(self):
+        """Initialize the DUT and start clock"""
+        clock = Clock(self.dut.w_clock, COCOTB_CLOCK, units="ns")
+        cocotb.start_soon(clock.start())
+
+        # Initialize inputs
+        self.dut.w_ready.value = 0
+        self.dut.w_rw.value = 0
+        self.dut.w_stream.value = 0
+        self.dut.w_weight.value = 0
+        self.dut.w_input.value = 0
+        self.dut.w_fwd_in.value = 0
+
+        await self.reset()
+
 
 @cocotb.test()
-async def pe(dut):
-    """Test the Output-Stationary PE Array against the function table."""
+async def test_data_gating(dut):
+    """Test data gating functionality in multiplication pipeline"""
+    tb = PETest(dut)
+    await tb.initialize()
 
-    # Helper function to reset the DUT
-    async def reset_dut():
-        dut.w_rst_n.value = 0
-        await RisingEdge(dut.w_clk)
-        dut.w_rst_n.value = 1
-        await RisingEdge(dut.w_clk)
+    assert not_resolvable(
+        dut.w_out.value.binstr
+    ), "Output should be high-Z when not ready"
 
-    # Reset DUT
-    await reset_dut()
-
-    # Step 1: Ensure reset state aligns with function table
-    assert dut.w_out.value == BinaryValue('Z'), "Expected output to be high impedance (Z) after reset"
-
-    # Step 2: Load weights and inputs (w_ready = 0, w_rw = X)
-    dut.w_rw.value = 0
-    dut.w_ready.value = 0
-    dut.w_stream.value = 0  # Stream is off
-
-    test_weight = 5
-    test_input = 3
-
-    dut.w_weight.value = test_weight
-    dut.w_input.value = test_input
-
-    await RisingEdge(dut.w_clk)
-
-    # Verify that registers are updated properly
-    assert dut.w_wreg_out.value == test_weight, f"Expected w_wreg_out={test_weight}, got {dut.w_wreg_out.value}"
-    assert dut.w_ireg_out.value == test_input, f"Expected w_ireg_out={test_input}, got {dut.w_ireg_out.value}"
-    assert dut.r_scratch.value == 0, f"Expected r_scratch=0, got {dut.r_scratch.value}"
-    assert dut.w_freg_out.value == 0, f"Expected w_freg_out=0 after reset, got {dut.w_freg_out.value}"
-
-    # Step 3: Compute phase with stream off (w_ready = 1, w_rw = 0, w_stream = 0)
-    dut.w_rw.value = 0
+    # Test 1: Zero weight should not trigger pipeline
     dut.w_ready.value = 1
-    dut.w_stream.value = 0
+    dut.w_rw.value = 1
+    dut.w_weight.value = 0
+    dut.w_input.value = 5
 
-    await RisingEdge(dut.w_clk)
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")  # Wait for nonblocking updates
+    assert dut.r_pipeline.value == 0, "Pipeline should be gated for zero weight"
+    assert dut.r_scratch.value == 0, "Scratch should be gated for zero weight"
 
-    # Expected output: w_out = r_scratch since w_stream = 0
-    assert dut.w_out.value == dut.r_scratch.value, f"Expected w_out={dut.r_scratch.value}, got {dut.w_out.value}"
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    assert dut.r_pipeline.value == 0, "Pipeline should be gated for zero weight"
+    assert dut.r_scratch.value == 0, "Scratch should be gated for zero weight"
 
-    # Step 4: Compute phase with stream on (w_ready = 1, w_rw = 0, w_stream = 1)
+    # Test 2: Zero input should not trigger pipeline
+    dut.w_weight.value = 5
+    dut.w_input.value = 0
+
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    assert dut.r_pipeline.value == 0, "Pipeline should be gated for zero weight"
+    assert dut.r_scratch.value == 0, "Scratch should be gated for zero weight"
+
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    assert dut.r_pipeline.value == 0, "Pipeline should be gated for zero weight"
+    assert dut.r_scratch.value == 0, "Scratch should be gated for zero weight"
+
+    # Test 3: Non-zero multiplication should proceed
+    dut.w_weight.value = 2
+    dut.w_input.value = 3
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    assert (
+        dut.r_pipeline.value == 6
+    ), f"Pipeline should be {2*3}. Got: {dut.r_pipeline.value}"
+    prev = dut.r_scratch.value
+    assert prev == 0, "Scratch should be zero"
+
+    dut.w_weight.value = 0
+    dut.w_input.value = 0
+
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    assert dut.r_scratch.value == (
+        prev + 6
+    ), f"Scratchpad should be {prev+6}. Got: {dut.r_scratch.value}"
+
+
+@cocotb.test()
+async def test_pipeline_timing(dut):
+    """Test pipeline stages timing and scratchpad accumulation"""
+    tb = PETest(dut)
+    await tb.initialize()
+
+    # Setup read mode with continuous values
+    dut.w_ready.value = 1
+    dut.w_rw.value = 1
+
+    # Generate test vectors
+    weights_vector = []
+    inputs_vector = []
+    for _ in range(OUT_MEM_NUM_ROWS):
+        wgt = random.randint(0, (2**OUT_PE_WEIGHT_WIDTH) - 1)
+        inp = random.randint(0, (2**OUT_PE_INPUT_WIDTH) - 1)
+
+        # Potentially gate values
+        if random.random() < 0.5:
+            wgt = 0
+        if random.random() < 0.5:
+            inp = 0
+
+        weights_vector.append(wgt)
+        inputs_vector.append(inp)
+
+    # Run the test
+    prev = 0
+    for wgt, inp in zip(weights_vector, inputs_vector):
+        dut.w_weight.value = wgt
+        dut.w_input.value = inp
+
+        # Just to test all possible interactions
+        dut.w_stream.value = random.choice([0, 1])
+        dut.w_fwd_in.value = random.randint(0, (2**OUT_PE_FWD_WIDTH) - 1)
+
+        await RisingEdge(dut.w_clock)
+        await Timer(1, units="ns")
+
+        assert (
+            dut.r_pipeline.value == wgt * inp
+        ), f"Pipeline should be {wgt*inp}. Got: {dut.r_pipeline.value}"
+
+        # How to account for addition overflow?
+        assert (
+            dut.r_scratch.value == prev
+        ), f"Scratch should be {prev}. Got: {dut.r_scratch.value}"
+
+        prev += wgt * inp
+
+    # Check final scratchpad value
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    assert (
+        dut.r_scratch.value == prev
+    ), f"Final scratch should be {prev}. Got: {dut.r_scratch.value}"
+
+
+@cocotb.test()
+async def test_streaming(dut):
+    """Test streaming mode and output behavior"""
+    tb = PETest(dut)
+    await tb.initialize()
+
+    # Test: Read with stream
+    dut.w_ready.value = 1
+    dut.w_rw.value = 1
     dut.w_stream.value = 1
+    dut.w_weight.value = 7
+    dut.w_input.value = 3
+    dut.w_fwd_in.value = (2**OUT_PE_FWD_WIDTH) - 1
 
-    await RisingEdge(dut.w_clk)
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
 
-    # Expected output: w_out = w_freg_out when streaming is enabled
-    assert dut.w_out.value == dut.w_freg_out.value, f"Expected w_out={dut.w_freg_out.value}, got {dut.w_out.value}"
+    prod = dut.w_weight.value * dut.w_input.value
+    assert dut.r_pipeline.value == (
+        prod
+    ), f"Pipeline should be {prod}. Got {dut.r_pipeline.value}"
+    assert (
+        dut.r_scratch.value == 0
+    ), f"Scratch should be zero. Got {dut.r_scratch.value}"
+    assert (
+        dut.r_fwd.value == dut.w_fwd_in.value
+    ), f"Forward reg should be {dut.w_fwd_in.value}. Got: {dut.r_fwd.value}"
+    assert (
+        dut.w_out.value == dut.r_fwd.value
+    ), f"Output should be {dut.r_fwd.value}. Got: {dut.w_out.value}"
+    assert (
+        dut.w_wgt_out.value == dut.w_weight.value
+    ), f"Weight out should be {dut.w_weight.value}. Got: {dut.w_wgt_out.value}"
+    assert (
+        dut.w_inp_out.value == dut.w_input.value
+    ), f"Input out should be {dut.w_input.value}. Got: {dut.w_inp_out.value}"
 
-    # Step 5: Compute phase with MAC operation, no streaming (w_ready = 1, w_rw = 1, w_stream = 0)
+    # Test: Read without stream
     dut.w_rw.value = 1
     dut.w_stream.value = 0
+    dut.w_weight.value = 5
+    dut.w_input.value = 0
+    dut.w_fwd_in.value = 10
+    prev_fwd = dut.r_fwd.value
 
-    expected_scratch = test_weight * test_input
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
 
-    await RisingEdge(dut.w_clk)
+    assert not_resolvable(
+        dut.w_out.value.binstr
+    ), "Output should be high-Z in read mode without stream"
+    assert (
+        dut.r_fwd.value == prev_fwd
+    ), f"Forward reg should be {prev_fwd}. Got: {dut.r_fwd.value}"
+    assert (
+        dut.r_scratch.value == prod
+    ), f"Scratch should be {prod}. Got: {dut.r_scratch.value}"
+    assert (
+        dut.r_pipeline.value == 0
+    ), f"Pipeline should be zero. Got: {dut.r_pipeline.value}"
+    assert (
+        dut.w_wgt_out.value == dut.w_weight.value
+    ), f"Weight out should be {dut.w_weight.value}. Got: {dut.w_wgt_out.value}"
+    assert (
+        dut.w_inp_out.value == dut.w_input.value
+    ), f"Input out should be {dut.w_input.value}. Got: {dut.w_inp_out.value}"
 
-    # Expected scratch update: r_scratch = r_scratch + (w_wreg_out * w_ireg_out)
-    assert dut.r_scratch.value == expected_scratch, f"Expected r_scratch={expected_scratch}, got {dut.r_scratch.value}"
-
-    # Expected output: w_out = high impedance (Z)
-    assert dut.w_out.value == BinaryValue('Z'), "Expected w_out to be Z when w_stream=0 during MAC"
-
-    # Step 6: Compute phase with MAC + Streaming (w_ready = 1, w_rw = 1, w_stream = 1)
+    # Test: Write with stream
+    dut.w_rw.value = 0
     dut.w_stream.value = 1
-    test_fwd_in = 42  # Simulated forwarded value
+    dut.w_weight.value = random.randint(0, (2**OUT_PE_WEIGHT_WIDTH) - 1)
+    dut.w_input.value = random.randint(0, (2**OUT_PE_INPUT_WIDTH) - 1)
+    prev_fwd = dut.r_fwd.value
 
-    dut.w_fwd_in.value = test_fwd_in
-    await RisingEdge(dut.w_clk)
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
 
-    # Expected output: w_out = previous w_freg_out
-    assert dut.w_out.value == dut.w_freg_out.value, f"Expected w_out={dut.w_freg_out.value}, got {dut.w_out.value}"
+    assert (
+        dut.w_out.value == dut.r_fwd.value
+    ), f"Output should be {dut.r_fwd.value}. Got: {dut.w_out.value}"
+    assert (
+        dut.r_fwd.value == prev_fwd
+    ), f"Forward reg should be {prev_fwd}. Got: {dut.r_fwd.value}"
+    assert (
+        dut.r_scratch.value == prod
+    ), f"Scratch should be {prod}. Got: {dut.r_scratch.value}"
+    assert (
+        dut.r_pipeline.value == 0
+    ), f"Pipeline should be zero. Got: {dut.r_pipeline.value}"
+    assert (
+        dut.w_wgt_out.value == dut.w_weight.value
+    ), f"Weight out should be {dut.w_weight.value}. Got: {dut.w_wgt_out.value}"
+    assert (
+        dut.w_inp_out.value == dut.w_input.value
+    ), f"Input out should be {dut.w_input.value}. Got: {dut.w_inp_out.value}"
 
-    # Expected register update: w_freg_out should be updated to w_fwd_in
-    assert dut.w_freg_out.value == test_fwd_in, f"Expected w_freg_out={test_fwd_in}, got {dut.w_freg_out.value}"
+    # Test: Write without stream
+    dut.w_rw.value = 0
+    dut.w_stream.value = 0
+    dut.w_weight.value = random.randint(0, (2**OUT_PE_WEIGHT_WIDTH) - 1)
+    dut.w_input.value = random.randint(0, (2**OUT_PE_INPUT_WIDTH) - 1)
+    prev_fwd = dut.r_fwd.value
+
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+
+    assert (
+        dut.w_out.value == dut.r_scratch.value
+    ), f"Output should be {dut.r_scratch.value}. Got: {dut.w_out.value}"
+    assert (
+        dut.r_fwd.value == prev_fwd
+    ), f"Forward reg should be {prev_fwd}. Got: {dut.r_fwd.value}"
+    assert (
+        dut.r_scratch.value == prod
+    ), f"Scratch should be {prod}. Got: {dut.r_scratch.value}"
+    assert (
+        dut.r_pipeline.value == 0
+    ), f"Pipeline should be zero. Got: {dut.r_pipeline.value}"
+    assert (
+        dut.w_wgt_out.value == dut.w_weight.value
+    ), f"Weight out should be {dut.w_weight.value}. Got: {dut.w_wgt_out.value}"
+    assert (
+        dut.w_inp_out.value == dut.w_input.value
+    ), f"Input out should be {dut.w_input.value}. Got: {dut.w_inp_out.value}"

@@ -83,5 +83,4 @@ module pe #(
         // If stream, output fwd_in. Else (write w/o stream), output scratchpad.
         (w_stream) ? r_fwd : r_scratch; 
         
-
 endmodule
