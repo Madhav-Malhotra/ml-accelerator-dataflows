@@ -5,6 +5,11 @@
     "OUT_GLB_NUM_ROWS": 64,
     "OUT_GLB_NUM_BITS": 16,
 
+    "OUT_PE_WEIGHT_WIDTH": 8,
+    "OUT_PE_INPUT_WIDTH": 8,
+    "OUT_PE_SCRATCH_WIDTH": 16,
+    "OUT_PE_FWD_WIDTH": 16,
+
     "WGT_MEM_NUM_ROWS": 64,
     "WGT_MEM_NUM_BITS": 8,
     

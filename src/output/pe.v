@@ -4,100 +4,84 @@
  * SPDX-License-Identifier: Apache-2.0
  * 
  * Implements a two-stage, output-stationary Processing Element (PE) for 
- * AI MAC operations following the “A2” design.
+ * AI MAC operations
+ * Spec: https://docs.google.com/document/d/1bwynsWdD87AS_AJQEDSaEcCtV5cUac0pMMwL_9xpX6k/edit?tab=t.0#heading=h.pdc4986g7pr4
  */
-module pe #(
-    parameter WEIGHT_WIDTH  = 8,
-    parameter INPUT_WIDTH   = 8,
-    parameter SCRATCH_WIDTH = 16,
-    parameter FWD_WIDTH     = 16
-)(
-    input  wire                   w_clk,
-    input  wire                   w_rst_n,      // active-low reset
-    input  wire                   w_ready,      
-    input  wire                   w_rw,
-    input  wire                   w_stream,
-    input  wire [WEIGHT_WIDTH-1:0] w_weight,
-    input  wire [INPUT_WIDTH-1:0]  w_input,
-    input  wire [FWD_WIDTH-1:0]    w_fwd_in,
 
-    // Internal registers
-    output wire [FWD_WIDTH-1:0]    w_out,
-    output wire [WEIGHT_WIDTH-1:0] w_wreg_out,
-    output wire [INPUT_WIDTH-1:0]  w_ireg_out
+`include "parameters.vh"
+
+module pe #(
+    parameter OUT_PE_WEIGHT_WIDTH  = `OUT_PE_WEIGHT_WIDTH,
+    parameter OUT_PE_INPUT_WIDTH   = `OUT_PE_INPUT_WIDTH,
+    parameter OUT_PE_SCRATCH_WIDTH = `OUT_PE_SCRATCH_WIDTH,
+    parameter OUT_PE_FWD_WIDTH     = `OUT_PE_FWD_WIDTH
+)(
+    input  wire                           w_clock,
+    input  wire                           w_ready,      
+    input  wire                           w_rw,
+    input  wire                           w_stream,
+    input  wire [OUT_PE_WEIGHT_WIDTH-1:0] w_weight,
+    input  wire [OUT_PE_INPUT_WIDTH-1:0]  w_input,
+    input  wire [OUT_PE_FWD_WIDTH-1:0]    w_fwd_in,
+
+    output wire [OUT_PE_FWD_WIDTH-1:0]    w_out,
+    output wire [OUT_PE_WEIGHT_WIDTH-1:0] w_wgt_out,
+    output wire [OUT_PE_INPUT_WIDTH-1:0]  w_inp_out
 );
 
-    reg [SCRATCH_WIDTH-1:0] r_scratch;
-    reg [WEIGHT_WIDTH-1:0]  r_wreg;
-    reg [INPUT_WIDTH-1:0]   r_ireg;
-    reg [FWD_WIDTH-1:0]     r_freg;
-    reg [FWD_WIDTH-1:0]     r_out;
+    // Internal signals
+    reg [OUT_PE_WEIGHT_WIDTH-1:0]  r_wgt;
+    reg [OUT_PE_INPUT_WIDTH-1:0]   r_inp;
+    reg [OUT_PE_FWD_WIDTH-1:0]     r_fwd;
+    reg [OUT_PE_SCRATCH_WIDTH-1:0] r_scratch;
+    reg [OUT_PE_SCRATCH_WIDTH-1:0] r_pipeline;
 
-    // Gated multiplier
-    wire [SCRATCH_WIDTH-1:0] w_product = 
-        ((w_weight == 0) || (w_input == 0)) ? 0 : (w_weight * w_input);
-
-    always @(posedge w_clk or negedge w_rst_n) begin
-        if (!w_rst_n) begin
-            r_scratch <= 0;
-            r_wreg    <= 0;
-            r_ireg    <= 0;
-            r_freg    <= 0;
-            r_out     <= 0;
-        end else begin
-            // Defaults next states equal current state
-            reg [SCRATCH_WIDTH-1:0] nxt_scratch = r_scratch;
-            reg [WEIGHT_WIDTH-1:0]  nxt_wreg    = r_wreg;
-            reg [INPUT_WIDTH-1:0]   nxt_ireg    = r_ireg;
-            reg [FWD_WIDTH-1:0]     nxt_freg    = r_freg;
-            reg [FWD_WIDTH-1:0]     nxt_out     = {FWD_WIDTH{1'bz}};
-
-            if (!w_ready) begin
-                // Load mode (w_ready=0)
-                nxt_scratch = 0;
-                nxt_wreg    = w_weight;
-                nxt_ireg    = w_input;
-                nxt_freg    = 0;
-                nxt_out     = {FWD_WIDTH{1'bz}};
-            end else if (w_ready && !w_rw) begin
-                // read/no-MAC
-                nxt_wreg    = w_weight;
-                nxt_ireg    = w_input;
-                nxt_scratch = r_scratch;
-                nxt_freg    = r_freg;
-                if (!w_stream)
-                    // Out signal gets current scratch value
-                    nxt_out = r_scratch;
-                else
-                    // Out signal gets current forward register 
-                    nxt_out = r_freg;
-            end else if (w_ready && w_rw) begin
-                // Performs MAC operations
-                nxt_scratch = r_scratch + w_product;
-                nxt_wreg    = w_weight;
-                nxt_ireg    = w_input;
-                if (!w_stream) begin
-                    // Output signal is high impedence when w_stream is low
-                    nxt_out  = {FWD_WIDTH{1'bz}};
-                    nxt_freg = r_freg;
-                end else begin
-                    // Streaming, outsignal load new freg from w_fwd_in
-                    nxt_out  = r_freg;
-                    nxt_freg = w_fwd_in;
-                end
+    always @(posedge w_clock) begin
+        r_wgt <= w_weight;
+        r_inp <= w_input;
+        
+        // Normal operations
+        if (w_ready) begin
+            // Data gated pipeline addition
+            if (r_pipeline != {OUT_PE_SCRATCH_WIDTH{1'b0}}) begin
+                r_scratch <= r_scratch + r_pipeline;
+                r_pipeline <= {OUT_PE_SCRATCH_WIDTH{1'b0}};
+            end else begin
+                r_scratch <= r_scratch;
+                r_pipeline <= r_pipeline;
             end
 
-            // Update internal registers
-            r_scratch <= nxt_scratch;
-            r_wreg    <= nxt_wreg;
-            r_ireg    <= nxt_ireg;
-            r_freg    <= nxt_freg;
-            r_out     <= nxt_out;
+            // If read, then initiate pipelined multiplication with data gating
+            if (w_rw) begin
+                if (r_wgt != {OUT_PE_WEIGHT_WIDTH{1'b0}} && r_inp != {OUT_PE_INPUT_WIDTH{1'b0}}) begin
+                    r_pipeline <= w_weight * w_input;
+                end 
+                // Stream enabled or disabled
+                r_fwd <= (w_stream) ? w_fwd_in : r_fwd;
+            end 
+            
+            // If write, keep internal signals unchanged.
+            else begin
+                r_fwd <= r_fwd;
+            end
+        
+        // Reset state
+        end else begin
+            r_scratch <= {OUT_PE_SCRATCH_WIDTH{1'b0}};
+            r_fwd <= {OUT_PE_FWD_WIDTH{1'b0}};
+            r_pipeline <= {OUT_PE_SCRATCH_WIDTH{1'b0}};
         end
     end
 
-    assign w_out       = r_out;
-    assign w_wreg_out  = r_wreg;
-    assign w_ireg_out  = r_ireg;
+    // Combinational assignments
+    assign w_wgt_out = r_wgt;
+    assign w_inp_out  = r_inp;
+
+    // Z when not ready or read w/o stream. 
+    assign w_out = (!w_ready || (w_rw && !w_stream)) ? 
+        {OUT_PE_FWD_WIDTH{1'bz}} :
+        // If stream, output fwd_in. Else (write w/o stream), output scratchpad.
+        (w_stream) ? r_fwd : r_scratch; 
+        
 
 endmodule
