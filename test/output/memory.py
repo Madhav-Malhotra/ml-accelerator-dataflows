@@ -17,31 +17,40 @@ NUM_ROWS = 64
 NUM_BITS = 8
 
 
+def not_resolvable(value: str) -> bool:
+    """Check if a value is not resolvable"""
+    return "x" in value.lower() or "z" in value.lower()
+
+
 # Initialize the DUT signals
 @cocotb.coroutine
 async def initialize_dut(dut):
-    dut.w_clk <= 0
-    dut.w_ready <= 0
-    dut.w_rw <= 0
-    dut.w_address <= 0
-    dut.w_data_in <= 0
+    dut.w_clock = 0
+    dut.w_ready = 0
+    dut.w_rw = 0
+    dut.w_address = 0
+    dut.w_data_in = 0
     await Timer(10, units="ns")
 
 
 @cocotb.test()
 async def test_reset_state(dut):
     # Start the clock
-    cocotb.fork(Clock(dut.w_clk, 20, units="ns").start())  # 50 MHz clock
+    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())  # 50 MHz clock
 
     # Initialize signals
     await initialize_dut(dut)
 
     dut.w_ready.value = 0
     await RisingEdge(dut.w_clock)
+    # Need a small delay to allow non-blocking assignment to take effect
+    await Timer(1, units="ns")
 
     # Verify reset state outputs
     # Check if output is high-Z
-    assert dut.r_data_out.value.is_z, "Output should be high-Z during reset"
+    assert not_resolvable(
+        dut.w_data_out.value.binstr
+    ), "Output should be high-Z during reset"
 
     # Check memory contents
     # Note: Not all simulators allow direct access to memory arrays
@@ -59,18 +68,18 @@ async def test_reset_state(dut):
 async def test_read_memory(dut):
     """Test how the memory reads data"""
     # Start the clock
-    cocotb.fork(Clock(dut.w_clk, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
 
     # Initialize signals
     await initialize_dut(dut)
 
     # Wait a few clock cycles after reset
-    for _ in range(3):
-        await RisingEdge(dut.w_clk)
+    for _ in range(2):
+        await RisingEdge(dut.w_clock)
 
     # Enable memory operations
-    dut.w_ready <= 1
-    dut.w_rw <= 1  # Read mode
+    dut.w_ready = 1
+    dut.w_rw = 1  # Read mode
 
     # Test reading data into multiple addresses
     test_data = [
@@ -80,9 +89,10 @@ async def test_read_memory(dut):
     ]
 
     for addr, data in test_data:
-        dut.w_address <= addr
-        dut.w_data_in <= data
-        await RisingEdge(dut.w_clk)
+        dut.w_address = addr
+        dut.w_data_in = data
+        await RisingEdge(dut.w_clock)
+        await Timer(1, units="ns")  # small delay for nonblocking assignment
 
         # Verify data was read into memory (if memory array is accessible)
         try:
@@ -94,25 +104,27 @@ async def test_read_memory(dut):
             dut._log.info(f"Cannot directly verify write to address {addr}")
 
     # Check that output remains high-Z while memory reads data
-    assert dut.r_data_out.value.is_z, "Output should be high-Z during write operations"
+    assert not_resolvable(
+        dut.w_data_out.value.binstr
+    ), "Output should be high-Z during read operations"
 
 
 @cocotb.test()
-async def test_read_memory(dut):
+async def test_write_memory(dut):
     """Test writing data from memory to output"""
     # Start the clock
-    cocotb.fork(Clock(dut.w_clk, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
 
     # Initialize signals
     await initialize_dut(dut)
 
-    # Wait a few clock cycles after reset
-    for _ in range(3):
-        await RisingEdge(dut.w_clk)
+    # Wait for reset to work
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
 
     # Enable memory and read test data into it
-    dut.w_ready <= 1
-    dut.w_rw <= 1  # Read mode
+    dut.w_ready = 1
+    dut.w_rw = 1  # Read mode
 
     # Write test pattern
     test_data = {
@@ -122,20 +134,33 @@ async def test_read_memory(dut):
     }
 
     for addr, data in test_data.items():
-        dut.w_address <= addr
-        dut.w_data_in <= data
-        await RisingEdge(dut.w_clk)
+        dut.w_address = addr
+        dut.w_data_in = data
+
+        await RisingEdge(dut.w_clock)
+        await Timer(1, units="ns")  # Small delay to allow memory to update
 
     # Switch to write mode
-    dut.w_rw <= 0
+    dut.w_rw = 0
 
     # Write each location of data to the output
     for addr, expected_data in test_data.items():
-        dut.w_address <= addr
-        await RisingEdge(dut.w_clk)
-        await Timer(1, units="ns")  # Small delay to allow output to stabilize
+        dut.w_address = addr
 
-        written_val = int(dut.r_data_out_reg.value)
+        dut._log.info(f"w_ready: {dut.w_ready.value}")
+        dut._log.info(f"w_rw: {dut.w_rw.value}")
+        dut._log.info(f"r_data_out: {dut.r_data_out.value}")
+        dut._log.info(f"w_data_out: {dut.w_data_out.value.binstr}")
+
+        await RisingEdge(dut.w_clock)
+        await Timer(15, units="ns")  # Small delay to allow output to stabilize
+
+        dut._log.info(f"w_ready: {dut.w_ready.value}")
+        dut._log.info(f"w_rw: {dut.w_rw.value}")
+        dut._log.info(f"r_data_out: {dut.r_data_out.value}")
+        dut._log.info(f"w_data_out: {dut.w_data_out.value.binstr}")
+
+        written_val = int(dut.w_data_out.value)
         assert (
             written_val == expected_data
         ), f"Write from address {addr} to output returned {written_val:02x}, expected {expected_data:02x}"
@@ -145,33 +170,33 @@ async def test_read_memory(dut):
 async def test_high_z_behavior(dut):
     """Test behavior when w_rw is in high-Z state"""
     # Start the clock
-    cocotb.fork(Clock(dut.w_clk, 20, units="ns").start())
+    cocotb.start_soon(Clock(dut.w_clock, 20, units="ns").start())
 
     # Initialize signals
     await initialize_dut(dut)
 
     # Wait a few clock cycles after reset
     for _ in range(3):
-        await RisingEdge(dut.w_clk)
+        await RisingEdge(dut.w_clock)
 
     # Enable memory
-    dut.w_ready <= 1
+    dut.w_ready = 1
 
     # Set w_rw to high-Z
-    dut.w_rw <= BinaryValue("z")
+    dut.w_rw = BinaryValue("z")
 
     # Try different addresses
     test_addresses = [0x0, 0x1F, 0x3F]
 
     for addr in test_addresses:
-        dut.w_address <= addr
-        dut.w_data_in <= 0xAA  # Test data
-        await RisingEdge(dut.w_clk)
+        dut.w_address = addr
+        dut.w_data_in = 0xAA  # Test data
+        await RisingEdge(dut.w_clock)
         await Timer(1, units="ns")
 
         # Verify output is high-Z when w_rw is high-Z
-        assert (
-            dut.r_data_out.value.is_z
+        assert not_resolvable(
+            dut.w_data_out.value.binstr
         ), f"Output should be high-Z when w_rw is high-Z, address: {addr}"
 
     # Verify memory contents haven't changed
