@@ -5,22 +5,22 @@
  * Implements Output Stationary Cache
  */
 
-module A6_cache #(
-  parameter wa_bits = 8; // number of bits for weight and activation
-  parameter wa_rows = 256; // number of rows for weight and activation 
-  parameter p_bits = 16; // number of bits for psums
-  parameter p_rows = 32; // number of rows for psums
+module cache #(
+  parameter wa_bits = 8, // number of bits for weight and activation
+  parameter wa_rows = 256, // number of rows for weight and activation 
+  parameter p_bits = 16, // number of bits for psums
+  parameter p_rows = 32 // number of rows for psums
 )(
-  input wire w_clk; // clock input
-  input wire w_ready; // When active high: load/send data or idle when active low: reset signals
-  input wire [2:0] w_state; // controls functionality, 3 bits for 7 states
-  input wire [wa_bits - 1 : 0] w_bus_in; // input to bus
-  input wire [p_bits - 1 : 0] w_glb_in; // input to GLB
-  input wire [7:0] w_w_addr; // address of weight register also used for psum register address, 8 bits for 256 numbers
-  input wire [7:0] w_a_addr; // address of activation register, 8 bits for 256 numbers
-  output reg [wa_bits - 1 : 0] r_wout; // weight output
-  output reg [wa_bits - 1 : 0] r_aout; // activation output
-  output reg [p_bits - 1 : 0] r_bus_out; // psum output to bus
+  input wire w_clk, // clock input
+  input wire w_ready, // When active high: load/send data or idle when active low: reset signals
+  input wire [2:0] w_state, // controls functionality, 3 bits for 7 states
+  input wire [wa_bits - 1 : 0] w_bus_in, // input to bus
+  input wire [p_bits - 1 : 0] w_glb_in, // input to GLB
+  input wire [7:0] w_w_addr, // address of weight register also used for psum register address, 8 bits for 256 numbers
+  input wire [7:0] w_a_addr, // address of activation register, 8 bits for 256 numbers
+  output reg [wa_bits - 1 : 0] r_wout, // weight output
+  output reg [wa_bits - 1 : 0] r_aout, // activation output
+  output reg [p_bits - 1 : 0] r_bus_out // psum output to bus
 );
   
   reg [wa_bits - 1 : 0] r_w [wa_rows - 1 : 0]; // weight register
@@ -91,5 +91,6 @@ module A6_cache #(
       end
     endcase
   end 
+  end
 endmodule 
       
