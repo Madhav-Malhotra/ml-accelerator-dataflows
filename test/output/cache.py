@@ -1,23 +1,27 @@
 """
  * Copyright (c) 2024 WAT.ai Chip Team
- * Author: Brian
+ * Author: Brian Ibitoye
  * SPDX-License-Identifier: Apache-2.0
  * Tests cache for output stationary dataflow
  * (spec: https://docs.google.com/document/d/1bwynsWdD87AS_AJQEDSaEcCtV5cUac0pMMwL_9xpX6k/edit?tab=t.0#heading=h.qhw9ph8pgjln)
 """
 
+import json
 import cocotb
 from cocotb.clock import Clock
-from cocotb.binary import BinaryValue
 from cocotb.triggers import RisingEdge, Timer
 
-# Define parameters here, no external file needed
-COCOTB_CLOCK = 20     # Clock period in ns => 50 MHz
-OUT_MEM_NUM_ROWS = 32 # Example for verifying internal memory
+with open("parameters.json") as f:
+    params = json.load(f)
+
+COCOTB_CLOCK = params["COCOTB_CLOCK_NS"]
+OUT_MEM_NUM_ROWS = params["OUT_MEM_NUM_ROWS"]
+
 
 def not_resolvable(value: str) -> bool:
     """Returns True if 'x' or 'z' appears in the binary string."""
     return ("x" in value.lower()) or ("z" in value.lower())
+
 
 @cocotb.coroutine
 async def initialize_dut(dut):
@@ -33,7 +37,7 @@ async def initialize_dut(dut):
     dut.w_w_addr.value = 0
     dut.w_a_addr.value = 0
 
-    await Timer(10, units="ns")
+    await Timer(int(COCOTB_CLOCK / 2), units="ns")
 
 
 @cocotb.test()
@@ -74,11 +78,7 @@ async def test_load_and_send_weights(dut):
     await RisingEdge(dut.w_clk)
 
     # Some test weights
-    test_values = {
-        0x00: 0x12,
-        0x0F: 0x34,
-        0xA0: 0xAB
-    }
+    test_values = {0x00: 0x12, 0x0F: 0x34, 0xA0: 0xAB}
 
     # Load weights (S=0 => bus_in -> r_w)
     for addr, val in test_values.items():
@@ -103,9 +103,9 @@ async def test_load_and_send_weights(dut):
         await Timer(2, units="ns")
 
         read_val = dut.r_wout.value.integer
-        assert read_val == expected, (
-            f"At addr=0x{addr:02X}, got 0x{read_val:02X}, expected 0x{expected:02X}"
-        )
+        assert (
+            read_val == expected
+        ), f"At addr=0x{addr:02X}, got 0x{read_val:02X}, expected 0x{expected:02X}"
         # Other outputs remain high-Z
         assert not_resolvable(dut.r_aout.value.binstr), "r_aout remains high-Z"
         assert not_resolvable(dut.r_bus_out.value.binstr), "r_bus_out remains high-Z"
@@ -119,11 +119,7 @@ async def test_load_and_send_activations(dut):
     dut.w_ready.value = 1
     await RisingEdge(dut.w_clk)
 
-    test_values = {
-        0x10: 0x56,
-        0x20: 0x78,
-        0xE0: 0xCD
-    }
+    test_values = {0x10: 0x56, 0x20: 0x78, 0xE0: 0xCD}
 
     # Load activations (S=1)
     for addr, val in test_values.items():
@@ -143,9 +139,9 @@ async def test_load_and_send_activations(dut):
         await Timer(2, units="ns")
 
         read_val = dut.r_aout.value.integer
-        assert read_val == expected, (
-            f"At addr=0x{addr:02X}, got 0x{read_val:02X}, expected 0x{expected:02X}"
-        )
+        assert (
+            read_val == expected
+        ), f"At addr=0x{addr:02X}, got 0x{read_val:02X}, expected 0x{expected:02X}"
         # Other outputs remain high-Z
         assert not_resolvable(dut.r_wout.value.binstr), "r_wout high-Z"
         assert not_resolvable(dut.r_bus_out.value.binstr), "r_bus_out high-Z"
@@ -205,11 +201,7 @@ async def test_store_and_send_psums(dut):
     dut.w_ready.value = 1
     await RisingEdge(dut.w_clk)
 
-    test_values = {
-        0x00: 0x1234,
-        0x10: 0xABCD,
-        0x1E: 0xFFFF
-    }
+    test_values = {0x00: 0x1234, 0x10: 0xABCD, 0x1E: 0xFFFF}
 
     # S=5 => store psum from w_glb_in -> r_p[w_w_addr]
     for addr, val in test_values.items():
@@ -223,7 +215,9 @@ async def test_store_and_send_psums(dut):
         # Outputs are high-Z while storing
         assert not_resolvable(dut.r_wout.value.binstr), "r_wout high-Z in psum store"
         assert not_resolvable(dut.r_aout.value.binstr), "r_aout high-Z in psum store"
-        assert not_resolvable(dut.r_bus_out.value.binstr), "r_bus_out high-Z in psum store"
+        assert not_resolvable(
+            dut.r_bus_out.value.binstr
+        ), "r_bus_out high-Z in psum store"
 
     # S=6 => r_p[w_w_addr] -> r_bus_out
     for addr, expected in test_values.items():
@@ -234,9 +228,9 @@ async def test_store_and_send_psums(dut):
         await Timer(2, units="ns")
 
         read_val = dut.r_bus_out.value.integer
-        assert read_val == expected, (
-            f"At addr=0x{addr:02X}, got 0x{read_val:04X}, expected 0x{expected:04X}"
-        )
+        assert (
+            read_val == expected
+        ), f"At addr=0x{addr:02X}, got 0x{read_val:04X}, expected 0x{expected:04X}"
         # Weights/activations high-Z
         assert not_resolvable(dut.r_wout.value.binstr), "r_wout high-Z in psum send"
         assert not_resolvable(dut.r_aout.value.binstr), "r_aout high-Z in psum send"
@@ -255,6 +249,8 @@ async def test_idle_state(dut):
 
     assert not_resolvable(dut.r_wout.value.binstr), "r_wout should be high-Z in idle"
     assert not_resolvable(dut.r_aout.value.binstr), "r_aout should be high-Z in idle"
-    assert not_resolvable(dut.r_bus_out.value.binstr), "r_bus_out should be high-Z in idle"
+    assert not_resolvable(
+        dut.r_bus_out.value.binstr
+    ), "r_bus_out should be high-Z in idle"
 
     dut._log.info("Idle state test passed.")

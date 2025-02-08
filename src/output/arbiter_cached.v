@@ -23,7 +23,12 @@ module arbiter_cached #(
                                                     // Add FIFO inputs later
 );
     // State localparams
-    localparam RESET = 0, IDLE = 1, LOCK = 2, ARBITRATE = 3, WRITE = 4, READ = 5;
+    localparam RESET = 3'd0; 
+    localparam IDLE = 3'd1; 
+    localparam LOCK = 3'd2;
+    localparam ARBITRATE = 3'd3;
+    localparam WRITE = 3'd4; 
+    localparam READ = 3'd5;
 
     // Output signals (raw before tristate buffers)
     reg [NUM_CORES-1:0] r_grant;
@@ -70,6 +75,7 @@ module arbiter_cached #(
                 IDLE: if (w_req != 0) r_state <= LOCK;
                 // wait for locked request before going to arbitrate
                 LOCK: if (r_req != 0) r_state <= ARBITRATE;
+                      else if (w_req == 0) r_state <= IDLE;
                 // figure out whether core wants to write or read
                 ARBITRATE:  if (r_load[sel]) r_state <= WRITE;
                             else r_state <= READ;

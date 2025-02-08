@@ -63,7 +63,7 @@ clean_local:
 
 help_local:
 	@echo "Usage:"
-	@echo "  make MOD_TYPE=<type> MOD=<name>"
+	@echo "  make test MOD_TYPE=<type> MOD=<name>"
 	@echo "  where <type> is 'output' or 'weight'"
 	@echo "  and <name> is the module name without .v extension"
 	@echo ""
