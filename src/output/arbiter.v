@@ -20,7 +20,7 @@ module arbiter #(
     input wire w_ready,                     // Active high ready
     input wire [NUM_CORES-1:0] w_req,       // Request from each core
     output reg [NUM_CORES-1:0] r_grant,     // Grants to each core (don't need to gate so reg)
-    output wire [BURST_WIDTH-1:0] w_burst,   // Burst size for data transfer
+    output wire [BURST_WIDTH-1:0] w_burst,  // Burst size for data transfer
     output wire w_rw,                       // Read/write signal for main mem
     output wire [ADDR_WIDTH-1:0] w_addr     // Address for main mem
 );
