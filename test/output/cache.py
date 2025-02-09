@@ -16,7 +16,7 @@ with open("parameters.json") as f:
 
 COCOTB_CLOCK = params["COCOTB_CLOCK_NS"]
 OUT_MEM_NUM_ROWS = params["OUT_MEM_NUM_ROWS"]
-
+PSUM_MEM_NUM_ROWS = params["PSUM_MEM_NUM_ROWS"]
 
 def not_resolvable(value: str) -> bool:
     """Returns True if 'x' or 'z' appears in the binary string."""
@@ -61,9 +61,12 @@ async def test_reset_state(dut):
         for i in range(OUT_MEM_NUM_ROWS):
             wval = int(dut.r_w[i].value)
             aval = int(dut.r_a[i].value)
-            pval = int(dut.r_p[i].value)
             assert wval == 0, f"r_w[{i}] != 0"
             assert aval == 0, f"r_a[{i}] != 0"
+
+        # Check psum registers (only PSUM_MEM_NUM_ROWS entries exist)
+        for i in range(PSUM_MEM_NUM_ROWS):
+            pval = int(dut.r_p[i].value)
             assert pval == 0, f"r_p[{i}] != 0"
     except AttributeError:
         dut._log.warning("Direct reg array access not supported in this simulator.")
