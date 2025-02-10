@@ -8,7 +8,11 @@
 
 `include "parameters.vh"
 
-// Helper macros to reset memories, GLBs, and PEs
+/* ==============================================
+Helper macros to reset memories, GLBs, and PEs 
+============================================== */
+
+// Resets weight and input data memories
 `define RESET_MEMS(i) \
     r_mem_weight_rw[i] <= 0; \
     r_mem_weight_addr[i] <= 0; \
@@ -17,16 +21,68 @@
     r_mem_input_addr[i] <= 0; \
     r_mem_input_ready[i] <= 0;
 
+// Resets global buffers that collect output data
 `define RESET_GLBS(i) \
     r_glb_rw[i] <= 0; \
     r_glb_addr[i] <= 0; \
     r_glb_ready[i] <= 0;
 
+// Resets PEs
 `define RESET_PES(i) \ 
     w_pe_ready[i] <= 0; \
     w_pe_rw[i] <= 0; \
     w_pe_stream[i] <= 0;
 
+// Sets weight memory to read data into specified address
+`define MEM_WEIGHT_READ(i, first) \
+    r_mem_weight_rw[i] <= 1; \
+    r_mem_weight_ready[i] <= 1; \
+    if (first) r_mem_weight_addr[i] <= 0; \
+    else r_mem_weight_addr[i] <= r_mem_weight_addr[i] + 1; 
+
+// Sets weight memory to write data from specified address
+`define MEM_WEIGHT_WRITE(i, first) \
+    r_mem_weight_rw[i] <= 0; \
+    r_mem_weight_ready[i] <= 1; \
+    if (first) r_mem_weight_addr[i] <= 0; \
+    else r_mem_weight_addr[i] <= r_mem_weight_addr[i] + 1; 
+
+// Sets input memory to read data into specified address
+`define MEM_INPUT_READ(i, first) \
+    r_mem_input_rw[i] <= 1; \
+    r_mem_input_ready[i] <= 1; \
+    if (first) r_mem_input_addr[i] <= 0; \
+    else r_mem_input_addr[i] <= r_mem_input_addr[i] + 1; 
+
+// Sets input memory to write data from specified address
+`define MEM_INPUT_WRITE(i, first) \
+    r_mem_input_rw[i] <= 0; \
+    r_mem_input_ready[i] <= 1; \
+    if (first) r_mem_input_addr[i] <= 0; \
+    else r_mem_input_addr[i] <= r_mem_input_addr[i] + 1; 
+
+// Sets PEs to active read mode
+`define PE_READ(bottom, top) \
+    integer i; \
+    for (i = bottom; i < top; i = i + 1) begin \
+        r_pe_ready[i] <= 1; \
+        r_pe_rw[i] <= 1; \
+        r_pe_stream[i] <= 0; \
+    end
+
+// Sets PEs to be reset
+`define PE_RESET(bottom, top) \
+    integer j; \
+    for (j = bottom; j < top; j = j + 1) begin \
+        r_pe_ready[j] <= 0; \
+        r_pe_rw[j] <= 0; \
+        r_pe_stream[j] <= 0; \
+    end
+
+
+/* ==============================================
+Controller module 
+============================================== */
 
 module controller #(
     parameter NUM_MEMS = `OUT_CTL_NUM_MEMS,                                     // Number of memories feeding the array       
@@ -54,9 +110,13 @@ module controller #(
     output reg [GLB_ADDR_WIDTH-1:0] r_glb_addr [NUM_MEMS-1:0]                   // GLB address signals
     output reg [NUM_MEMS-1:0] r_glb_ready                                       // GLB ready signals
 
-    output wire [NUM_PES-1:0] w_pe_ready                                        // PE ready signals
-    output wire [NUM_PES-1:0] w_pe_rw                                           // Read data from mem or pass forward
-    output wire [NUM_PES-1:0] w_pe_stream                                       // Stream forwarded data or own data
+    // These are ordered by PE delay group, though it'll be weird to connect wires properly
+    // Specifically, the order from bit 0 to the highest bit is:
+    // PE (11), (12, 21), (13, 22, 31), (14, 23, 32, 41), (24, 33, 42), (34, 43), (44)
+    // (the parentheses enclose the delay group)
+    output reg [NUM_PES-1:0] r_pe_ready                                         // PE ready signals
+    output reg [NUM_PES-1:0] r_pe_rw                                            // Read data from mem or pass forward
+    output reg [NUM_PES-1:0] r_pe_stream                                        // Stream forwarded data or own data
 );
 
     // State definitions
@@ -71,6 +131,7 @@ module controller #(
     reg [3:0] r_state;
     reg r_transfer_done;
     reg [BURST_WIDTH:0] r_count;            // Intentionally oversized to handle overflow 
+    reg [BURST_WIDTH:0] r_burst;            // Intentionally oversized to handle overflow
 
     // State machine
     always @(posedge w_clock) begin
@@ -82,15 +143,30 @@ module controller #(
                 // wait for grant before loading memories
                 RESET: if (w_grant) r_state <= LOAD;
                 // Finish loading memories before distributing data
-                LOAD: if (r_transfer_done) r_state <= DISTRIBUTE;
+                LOAD: if (r_transfer_done) begin
+                    r_state <= DISTRIBUTE;
+                    r_transfer_done <= 0;
+                end
                 // Finish distributing data to last PE before computing
-                DISTRIBUTE: if (r_transfer_done) r_state <= COMPUTE;
+                DISTRIBUTE: if (r_transfer_done) begin
+                    r_state <= COMPUTE;
+                    r_transfer_done <= 0;
+                end
                 // Finish computing in earliest PE before cleanup
-                COMPUTE: if (r_transfer_done) r_state <= CLEANUP;
+                COMPUTE: if (r_transfer_done) begin
+                    r_state <= CLEANUP;
+                    r_transfer_done <= 0;
+                end
                 // Finish cleanup for all PEs before unloading GLBs
-                CLEANUP: if (r_transfer_done) r_state <= UNLOAD;
+                CLEANUP: if (r_transfer_done) begin
+                    r_state <= UNLOAD;
+                    r_transfer_done <= 0;
+                end
                 // Finish unloading GLBs before resetting
-                UNLOAD: if (r_transfer_done) r_state <= RESET;
+                UNLOAD: if (r_transfer_done) begin
+                    r_state <= RESET;
+                    r_transfer_done <= 0;
+                end
                 default: r_state <= RESET;
             endcase
         end
@@ -117,15 +193,154 @@ module controller #(
                 r_req <= 1;
                 r_transfer_done <= 0;
                 r_count <= 0;
+                r_burst <= 0;
             end
             LOAD: begin
+                r_req <= 1;
+                r_count <= r_count + 1;
+
+                // Reset all GLBs
+                integer i;
+                for (i = 0; i < NUM_MEMS; i = i + 1) begin
+                    `RESET_GLBS(i)
+                end
+
+                // Reset all PEs
+                integer j;
+                for (j = 0; j < NUM_PES; j = j + 1) begin
+                    `RESET_PES(j)
+                end
                 
+                // Step 1 - get burst length
+                if (r_count == 0) begin
+                    r_burst <= w_burst;
+                    r_transfer_done <= 0;
+
+                    // Memories stay off while determining burst length
+                    integer k;
+                    for (k = 0; k < NUM_MEMS; k = k + 1) begin
+                        `RESET_MEMS(k)
+                    end
+                end 
+                // Step 2 - load data into memories
+                else begin
+                    if (r_count == r_burst) begin
+                        r_transfer_done <= 1;
+                        r_count <= 0;
+                        r_burst <= r_burst;
+                    end
+
+                    integer k;
+                    for (k = 0; k < NUM_MEMS; k = k + 1) begin
+                        if (r_count == 1) begin
+                            `MEM_WEIGHT_READ(k, 1)
+                            `MEM_INPUT_READ(k, 1)
+                        end else begin
+                            `MEM_WEIGHT_READ(k, 0)
+                            `MEM_INPUT_READ(k, 0)
+                        end
+                    end
+                end
             end
             DISTRIBUTE: begin
+                r_req <= 0;
+                r_count <= r_count + 1;
+                r_burst <= r_burst;
+
+                // Reset all GLBs
+                integer i;
+                for (i = 0; i < NUM_MEMS; i = i + 1) begin
+                    `RESET_GLBS(i)
+                end
+
+                // Get new mem active every cycle until all mems active
+                if (r_count < NUM_MEMS) begin
+                    integer j;
+                    // Already active mems increment addresses
+                    for (j = 0; j < r_count; j = j + 1) begin
+                        `MEM_WEIGHT_WRITE(j, 0)
+                        `MEM_INPUT_WRITE(j, 0)
+                    end
+                    // Just became active mem starts address at 0
+                    `MEM_WEIGHT_WRITE(r_count, 1)
+                    `MEM_INPUT_WRITE(r_count, 1)
+                end 
                 
+                // Keep memories active until data is distributed
+                else begin
+                    integer j;
+                    for (j = 0; j < NUM_MEMS; j = j + 1) begin
+                        if (r_mem_weight_addr[j] == r_burst) begin
+                            r_mem_weight_ready[j] <= 0;
+                            r_mem_input_ready[j] <= 0;
+                        end else begin
+                            `MEM_WEIGHT_WRITE(j, 0)
+                            `MEM_INPUT_WRITE(j, 0)
+                        end
+                    end
+                end
+
+                // Warning - hardcoded section
+                case (r_count)
+                    0: begin 
+                        `PE_READ(0, 1)
+                        `PE_RESET(1, 16)
+                    end
+                    1: begin
+                        `PE_READ(0, 3)
+                        `PE_RESET(3, 16)
+                    end
+                    2: begin
+                        `PE_READ(0, 6)
+                        `PE_RESET(6, 16)
+                    end
+                    3: begin
+                        `PE_READ(0, 10)
+                        `PE_RESET(10, 16)
+                    end
+                    4: begin
+                        `PE_READ(0, 13)
+                        `PE_RESET(13, 16)
+                    end
+                    5: begin
+                        `PE_READ(0, 15)
+                        `PE_RESET(15, 16)
+                    end
+                    6: begin
+                        `PE_READ(0, 16)
+                        r_transfer_done <= 1;
+                        r_count <= 0;
+                    end
+                    default: begin
+                        `PE_RESET(0, 16)
+                    end
+                endcase
+
             end
             COMPUTE: begin
-                
+                r_count <= r_count + 1;
+                r_burst <= r_burst;
+
+                // Reset all GLBs; keep PEs active; keep memories active
+                integer i;
+                for (i = 0; i < NUM_MEMS; i = i + 1) begin
+                    `RESET_GLBS(i)
+                    `PE_READ(0, 16)
+                    
+                    if (r_mem_weight_addr[i] == r_burst) begin
+                        r_mem_weight_ready[i] <= 0;
+                        r_mem_input_ready[i] <= 0;
+                    end else begin
+                        `MEM_WEIGHT_WRITE(i, 0)
+                        `MEM_INPUT_WRITE(i, 0)
+                    end
+                end
+
+                // Transition to cleanup after first PE completes
+                if (r_mem_weight_addr[0] == r_burst) begin
+                    r_transfer_done <= 1;
+                    r_count <= 0;
+                end
             end
             CLEANUP: begin
                 

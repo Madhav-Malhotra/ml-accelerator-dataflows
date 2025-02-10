@@ -23,5 +23,6 @@
 `define WGT_GLB_NUM_BITS 16
 `define COCOTB_SEED 42
 `define COCOTB_CLOCK_NS 20
+`define PSUM_MEM_NUM_ROWS 32
 
 `endif
