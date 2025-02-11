@@ -22,16 +22,21 @@ Helper macros to reset memories, GLBs, and PEs
     r_mem_input_ready[i] <= 0;
 
 // Resets global buffers that collect output data
-`define RESET_GLBS(i) \
+`define GLB_RESET(i) \
     r_glb_rw[i] <= 0; \
     r_glb_addr[i] <= 0; \
     r_glb_ready[i] <= 0;
 
-// Resets PEs
-`define RESET_PES(i) \ 
-    w_pe_ready[i] <= 0; \
-    w_pe_rw[i] <= 0; \
-    w_pe_stream[i] <= 0;
+// Stalls (but does not 0) global buffers
+`define GLB_STALL(i) \
+    r_glb_rw[i] <= 1'bz; \
+    r_glb_addr[i] <= 0; \
+    r_glb_ready[i] <= 1;
+
+`define GLB_READ(i, addr) \
+    r_glb_rw[i] <= 1; \
+    r_glb_addr[i] <= addr; \
+    r_glb_ready[i] <= 1;
 
 // Sets weight memory to read data into specified address
 `define MEM_WEIGHT_READ(i, first) \
@@ -61,8 +66,8 @@ Helper macros to reset memories, GLBs, and PEs
     if (first) r_mem_input_addr[i] <= 0; \
     else r_mem_input_addr[i] <= r_mem_input_addr[i] + 1; 
 
-// Sets PEs to active read mode
-`define PE_READ(bottom, top) \
+// Sets range of PEs to read
+`define PE_READ_RANGE(bottom, top) \
     integer i; \
     for (i = bottom; i < top; i = i + 1) begin \
         r_pe_ready[i] <= 1; \
@@ -70,14 +75,71 @@ Helper macros to reset memories, GLBs, and PEs
         r_pe_stream[i] <= 0; \
     end
 
-// Sets PEs to be reset
-`define PE_RESET(bottom, top) \
+// Sets range of PEs to read with streaming
+`define PE_READ_STREAM_RANGE(bottom, top) \
+    integer i; \
+    for (i = bottom; i < top; i = i + 1) begin \
+        r_pe_ready[i] <= 1; \
+        r_pe_rw[i] <= 1; \
+        r_pe_stream[i] <= 1; \
+    end
+
+// Sets range of PEs to be reset
+`define PE_RESET_RANGE(bottom, top) \
     integer j; \
     for (j = bottom; j < top; j = j + 1) begin \
         r_pe_ready[j] <= 0; \
         r_pe_rw[j] <= 0; \
         r_pe_stream[j] <= 0; \
     end
+
+// Sets range of PEs to write
+`define PE_WRITE_RANGE(bottom, top) \
+    integer i; \
+    for (i = bottom; i < top; i = i + 1) begin \
+        r_pe_ready[i] <= 1; \
+        r_pe_rw[i] <= 0; \
+        r_pe_stream[i] <= 0; \
+    end
+
+// Sets range of PEs to write with streaming
+`define PE_WRITE_STREAM_RANGE(bottom, top) \
+    integer i; \
+    for (i = bottom; i < top; i = i + 1) begin \
+        r_pe_ready[i] <= 1; \
+        r_pe_rw[i] <= 0; \
+        r_pe_stream[i] <= 1; \
+    end
+
+// Sets specific PE to write without streaming
+`define PE_WRITE(i) \
+    r_pe_ready[i] <= 1; \
+    r_pe_rw[i] <= 0; \
+    r_pe_stream[i] <= 0;
+
+// Sets specific PE to write with streaming
+`define PE_WRITE_STREAM(i) \
+    r_pe_ready[i] <= 1; \
+    r_pe_rw[i] <= 0; \
+    r_pe_stream[i] <= 1;
+
+// Sets specific PE to read
+`define PE_READ(i) \
+    r_pe_ready[i] <= 1; \
+    r_pe_rw[i] <= 1; \
+    r_pe_stream[i] <= 0;
+
+// Sets specific PE to read with streaming
+`define PE_READ_STREAM(i) \
+    r_pe_ready[i] <= 1; \
+    r_pe_rw[i] <= 1; \
+    r_pe_stream[i] <= 1;
+
+// Sets specific PE to be reset
+`define PE_RESET(i) \
+    r_pe_ready[i] <= 0; \
+    r_pe_rw[i] <= 0; \
+    r_pe_stream[i] <= 0;
 
 
 /* ==============================================
@@ -180,13 +242,13 @@ module controller #(
                 // Reset all memory and GLB addresses and ready signals
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
                     `RESET_MEMS(i)
-                    `RESET_GLBS(i)
+                    `GLB_RESET(i)
                 end
 
                 // Reset all PEs
                 integer j;
                 for (j = 0; j < NUM_PES; j = j + 1) begin
-                    `RESET_PES(j)
+                    `PE_RESET(j)
                 end
 
                 // Reset internal signals
@@ -202,13 +264,13 @@ module controller #(
                 // Reset all GLBs
                 integer i;
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
-                    `RESET_GLBS(i)
+                    `GLB_RESET(i)
                 end
 
                 // Reset all PEs
                 integer j;
                 for (j = 0; j < NUM_PES; j = j + 1) begin
-                    `RESET_PES(j)
+                    `PE_RESET(j)
                 end
                 
                 // Step 1 - get burst length
@@ -250,7 +312,7 @@ module controller #(
                 // Reset all GLBs
                 integer i;
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
-                    `RESET_GLBS(i)
+                    `GLB_RESET(i)
                 end
 
                 // Get new mem active every cycle until all mems active
@@ -283,36 +345,36 @@ module controller #(
                 // Warning - hardcoded section
                 case (r_count)
                     0: begin 
-                        `PE_READ(0, 1)
-                        `PE_RESET(1, 16)
+                        `PE_READ_RANGE(0, 1)
+                        `PE_RESET_RANGE(1, 16)
                     end
                     1: begin
-                        `PE_READ(0, 3)
-                        `PE_RESET(3, 16)
+                        `PE_READ_RANGE(0, 3)
+                        `PE_RESET_RANGE(3, 16)
                     end
                     2: begin
-                        `PE_READ(0, 6)
-                        `PE_RESET(6, 16)
+                        `PE_READ_RANGE(0, 6)
+                        `PE_RESET_RANGE(6, 16)
                     end
                     3: begin
-                        `PE_READ(0, 10)
-                        `PE_RESET(10, 16)
+                        `PE_READ_RANGE(0, 10)
+                        `PE_RESET_RANGE(10, 16)
                     end
                     4: begin
-                        `PE_READ(0, 13)
-                        `PE_RESET(13, 16)
+                        `PE_READ_RANGE(0, 13)
+                        `PE_RESET_RANGE(13, 16)
                     end
                     5: begin
-                        `PE_READ(0, 15)
-                        `PE_RESET(15, 16)
+                        `PE_READ_RANGE(0, 15)
+                        `PE_RESET_RANGE(15, 16)
                     end
                     6: begin
-                        `PE_READ(0, 16)
+                        `PE_READ_RANGE(0, 16)
                         r_transfer_done <= 1;
                         r_count <= 0;
                     end
                     default: begin
-                        `PE_RESET(0, 16)
+                        `PE_RESET_RANGE(0, 16)
                     end
                 endcase
 
@@ -324,8 +386,8 @@ module controller #(
                 // Reset all GLBs; keep PEs active; keep memories active
                 integer i;
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
-                    `RESET_GLBS(i)
-                    `PE_READ(0, 16)
+                    `GLB_RESET(i)
+                    `PE_READ_RANGE(0, 16)
                     
                     if (r_mem_weight_addr[i] == r_burst) begin
                         r_mem_weight_ready[i] <= 0;
@@ -343,6 +405,119 @@ module controller #(
                 end
             end
             CLEANUP: begin
+                r_count <= r_count + 1;
+                r_burst <= r_burst;
+
+                // Warning - hardcoded section dependent on PE order
+                // PE (11), (12, 21), (13, 22, 31), (14, 23, 32, 41), (24, 33, 42), (34, 43), (44)
+                case (r_count)
+                    0: begin
+                        `PE_WRITE(0)
+                        `PE_READ_STREAM(1)
+                        `PE_READ_RANGE(2, 16)
+
+                        // Warning: use 1/Z/X not 0/X/X in cached version
+                        `RESET_MEMS(0)
+                        integer i;
+                        for (i = 1; i < NUM_MEMS; i = i + 1) begin
+                            `MEM_WEIGHT_READ(i, 0)
+                            `MEM_INPUT_READ(i, 0)
+                        end
+
+                        integer k;
+                        for (k = 1; k < NUM_MEMS; k = k + 1) begin
+                            `GLB_RESET(k)
+                        end
+                    end
+                    1: begin
+                        `PE_RESET(0)
+                        `PE_WRITE_RANGE(1, 3)
+                        `PE_READ_STREAM_RANGE(3, 5)
+                        `PE_READ_RANGE(5, 16)
+                        
+                        integer i;
+                        for (i = 0; i < 2; i = i + 1) begin
+                            `RESET_MEMS(i)
+                        end
+
+                        integer j;
+                        for (j = 2; j < NUM_MEMS; j = j + 1) begin
+                            `MEM_WEIGHT_READ(j, 0)
+                            `MEM_INPUT_READ(j, 0)
+                        end
+
+                        integer k;
+                        for (k = 1; k < NUM_MEMS; k = k + 1) begin
+                            `GLB_RESET(k)
+                        end
+                    end
+                    2: begin
+                        `PE_RESET(0)
+                        `PE_RESET(2)
+                        `PE_WRITE_STREAM(1)
+                        `PE_WRITE_RANGE(3, 6)
+                        `PE_READ_STREAM_RANGE(6, 9)
+                        `PE_READ_RANGE(9, 16)
+
+                        integer i;
+                        for (i = 0; i < 3; i = i + 1) begin
+                            `RESET_MEMS(i)
+                        end
+
+                        integer j;
+                        for (j = 3; j < NUM_MEMS; j = j + 1) begin
+                            `MEM_WEIGHT_READ(j, 0)
+                            `MEM_INPUT_READ(j, 0)
+                        end
+
+                        integer k;
+                        for (k = 1; k < NUM_MEMS; k = k + 1) begin
+                            `GLB_RESET(k)
+                        end
+                    end
+                    3: begin
+                        `PE_RESET(0)
+                        `PE_RESET(2)
+                        `PE_RESET(5)
+                        `PE_WRITE_STREAM(1)
+                        `PE_WRITE_STREAM(3)
+                        `PE_WRITE_STREAM(4)
+                        `PE_WRITE_RANGE(6, 10)
+                        `PE_READ_STREAM_RANGE(10, 13)
+                        `PE_READ_RANGE(13, 16)
+
+                        integer i;
+                        for (i = 0; i < NUM_MEMS; i = i + 1) begin
+                            `RESET_MEMS(i)
+                        end
+
+                        `GLB_READ(0, 0)
+                        integer k;
+                        for (k = 1; k < NUM_MEMS; k = k + 1) begin
+                            // Switching to stalling now to prevent data from being overwritten
+                            `GLB_STALL(k)
+                        end
+                    end
+                    // PE (11), (12, 21), (13, 22, 31), (14, 23, 32, 41), (24, 33, 42), (34, 43), (44)
+                    4: begin
+                    end
+                    5: begin
+                    end
+                    6: begin
+                    end
+                    7: begin
+                    end
+                    8: begin
+                    end
+                    9: begin
+                    end
+                    10: begin
+                    end
+                    11: begin
+                    end
+                    default: begin
+                    end
+
                 
             end
             UNLOAD: begin
