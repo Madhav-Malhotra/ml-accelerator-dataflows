@@ -16,6 +16,11 @@
     "OUT_ARB_FIXED_BURST_WRITE": 64,
     "OUT_ARB_FIXED_BURST_READ": 16,
 
+    "OUT_CTL_NUM_MEMS": 4,
+
+    "OUT_CORE_BUS_WIRES": 64,
+    "OUT_CORE_NUM_MEMS": 4,
+
     "WGT_MEM_NUM_ROWS": 64,
     "WGT_MEM_NUM_BITS": 8,
     
@@ -24,6 +29,4 @@
 
     "COCOTB_SEED": 42,
     "COCOTB_CLOCK_NS": 20,
-
-    "PSUM_MEM_NUM_ROWS" : 32
 }

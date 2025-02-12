@@ -151,7 +151,7 @@ module controller #(
     parameter NUM_PES = NUM_MEMS * NUM_MEMS,                                    // Number of PEs in the array
     parameter BURST_WIDTH = `OUT_ARB_BURST_WIDTH,                               // Burst signal data width
     parameter MEM_ADDR_WIDTH = $clog2(`OUT_MEM_NUM_ROWS),                       // Address width for memories
-    parameter GLB_ADDR_WIDTH = $clog2(`OUT_GLB_NUM_ROWS),                       // Address width for global buffers
+    parameter GLB_ADDR_WIDTH = $clog2(`OUT_GLB_NUM_ROWS)                        // Address width for global buffers
 ) (
     input wire w_clock,                                                         // Clock input
     input wire w_ready,                                                         // Active high ready
