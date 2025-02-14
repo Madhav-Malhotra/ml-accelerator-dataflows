@@ -42,6 +42,7 @@ module arbiter #(
     reg [NUM_CORES-1:0] r_load;     // Load register
     reg [BURST_WIDTH-1:0] r_count;  // Counter for transfer state
     reg r_burst_done;               // Burst transfer done flag
+    reg [CORE_BIT_WIDTH-1:0] r_sel; // Selected core
 
     // Helper function to find first non-zero MSB
     function [CORE_BIT_WIDTH-1:0] find_msb;
@@ -49,7 +50,7 @@ module arbiter #(
         integer i;
         begin
             find_msb = 0;
-            for (i = NUM_CORES-1; i >= 0; i = i - 1) begin
+            for (i = 0; i <= NUM_CORES-1; i = i + 1) begin
                 if (value[i]) begin
                     find_msb = i[CORE_BIT_WIDTH-1:0];
                 end
@@ -94,6 +95,7 @@ module arbiter #(
                 r_addr <= 0;
                 r_count <= 0;
                 r_burst_done <= 0;
+                r_sel <= 0;
             end
             IDLE: begin
                 r_load <= r_load;
@@ -116,12 +118,10 @@ module arbiter #(
                 r_burst_done <= 0;
             end
             ARBITRATE: begin
-                reg [CORE_BIT_WIDTH-1:0] sel;
-                sel = find_msb(r_req);
-
-                r_load[sel] <= ~r_load[sel];
-                r_grant <= (1 << sel);
-                r_burst <= (!r_load[sel]) ? BURST_WRITE : BURST_READ;
+                r_sel = find_msb(r_req);
+                r_load[r_sel] <= ~r_load[r_sel];
+                r_grant <= (1 << r_sel);
+                r_burst <= (!r_load[r_sel]) ? BURST_WRITE : BURST_READ;
                 r_rw <= 0;
                 r_addr <= 0;
                 r_count <= 0;

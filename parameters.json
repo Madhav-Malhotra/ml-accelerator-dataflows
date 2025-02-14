@@ -28,5 +28,5 @@
     "WGT_GLB_NUM_BITS": 16,
 
     "COCOTB_SEED": 42,
-    "COCOTB_CLOCK_NS": 20,
+    "COCOTB_CLOCK_NS": 20
 }
