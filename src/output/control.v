@@ -222,7 +222,7 @@ module control #(
     reg r_transfer_done;
     reg [BURST_WIDTH:0] r_count;            // Intentionally oversized to handle overflow 
     reg [BURST_WIDTH:0] r_burst;            // Intentionally oversized to handle overflow
-    integer i, j, k;                        // index variables for mems, GLBs, etc.
+    integer i, j, k;                        // index variables for mems, GLBs, PEs.
 
     // State machine
     always @(posedge w_clock) begin
