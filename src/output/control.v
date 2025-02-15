@@ -41,48 +41,66 @@ Helper macros to reset memories, GLBs, and PEs
     r_glb_addr[i] <= 0; \
     r_glb_ready[i] <= 1;
 
-`define GLB_READ(i, addr) \
+`define GLB_READ_ADDR(i, addr) \
     r_glb_rw[i] <= 1; \
     r_glb_addr[i] <= addr; \
     r_glb_ready[i] <= 1;
 
-`define GLB_READ_INCR(i, first) \
+`define GLB_READ_INCR(i) \
     r_glb_rw[i] <= 1; \
-    r_glb_ready[i] <= 1;
-    if (first) r_glb_addr[i] <= 0; \
-    else r_glb_addr[i] <= r_glb_addr[i] + 1;
+    r_glb_ready[i] <= 1; \
+    r_glb_addr[i] <= r_glb_addr[i] + 1;
 
 // Sets weight memory to read data into specified address
-`define MEM_WEIGHT_READ(i, first) \
+`define MEM_WEIGHT_READ_ADDR(i, addr) \
     r_mem_weight_rw[i] <= 1; \
     r_mem_weight_ready[i] <= 1; \
-    if (first) r_mem_weight_addr[i] <= 0; \
-    else r_mem_weight_addr[i] <= r_mem_weight_addr[i] + 1; 
+    r_mem_weight_addr[i] <= addr;
+
+// Sets weight memory to read data with pre-incremented address
+`define MEM_WEIGHT_READ_INCR(i) \
+    r_mem_weight_rw[i] <= 1; \
+    r_mem_weight_ready[i] <= 1; \
+    r_mem_weight_addr[i] <= r_mem_weight_addr[i] + 1;
 
 // Sets weight memory to write data from specified address
-`define MEM_WEIGHT_WRITE(i, first) \
+`define MEM_WEIGHT_WRITE_ADDR(i, addr) \
     r_mem_weight_rw[i] <= 0; \
     r_mem_weight_ready[i] <= 1; \
-    if (first) r_mem_weight_addr[i] <= 0; \
-    else r_mem_weight_addr[i] <= r_mem_weight_addr[i] + 1; 
+    r_mem_weight_addr[i] <= addr;
+
+// Sets weight memory to write data with pre-incremented address
+`define MEM_WEIGHT_WRITE_INCR(i) \
+    r_mem_weight_rw[i] <= 0; \
+    r_mem_weight_ready[i] <= 1; \
+    r_mem_weight_addr[i] <= r_mem_weight_addr[i] + 1; 
 
 // Sets input memory to read data into specified address
-`define MEM_INPUT_READ(i, first) \
+`define MEM_INPUT_READ_ADDR(i, addr) \
     r_mem_input_rw[i] <= 1; \
     r_mem_input_ready[i] <= 1; \
-    if (first) r_mem_input_addr[i] <= 0; \
-    else r_mem_input_addr[i] <= r_mem_input_addr[i] + 1; 
+    r_mem_input_addr[i] <= addr;
 
+// Sets input memory to read data with pre-incremented address
+`define MEM_INPUT_READ_INCR(i) \
+    r_mem_input_rw[i] <= 1; \
+    r_mem_input_ready[i] <= 1; \
+    r_mem_input_addr[i] <= r_mem_input_addr[i] + 1;
+    
 // Sets input memory to write data from specified address
-`define MEM_INPUT_WRITE(i, first) \
+`define MEM_INPUT_WRITE_ADDR(i, addr) \
     r_mem_input_rw[i] <= 0; \
     r_mem_input_ready[i] <= 1; \
-    if (first) r_mem_input_addr[i] <= 0; \
-    else r_mem_input_addr[i] <= r_mem_input_addr[i] + 1; 
+    r_mem_input_addr[i] <= addr;
+
+// Sets input memory to write data from pre-incremented address
+`define MEM_INPUT_WRITE_INCR(i) \
+    r_mem_input_rw[i] <= 0; \
+    r_mem_input_ready[i] <= 1; \
+    r_mem_input_addr[i] <= r_mem_input_addr[i] + 1; 
 
 // Sets range of PEs to read
 `define PE_READ_RANGE(bottom, top) \
-    integer i; \
     for (i = bottom; i < top; i = i + 1) begin \
         r_pe_ready[i] <= 1; \
         r_pe_rw[i] <= 1; \
@@ -91,7 +109,6 @@ Helper macros to reset memories, GLBs, and PEs
 
 // Sets range of PEs to read with streaming
 `define PE_READ_STREAM_RANGE(bottom, top) \
-    integer i; \
     for (i = bottom; i < top; i = i + 1) begin \
         r_pe_ready[i] <= 1; \
         r_pe_rw[i] <= 1; \
@@ -100,7 +117,6 @@ Helper macros to reset memories, GLBs, and PEs
 
 // Sets range of PEs to be reset
 `define PE_RESET_RANGE(bottom, top) \
-    integer j; \
     for (j = bottom; j < top; j = j + 1) begin \
         r_pe_ready[j] <= 0; \
         r_pe_rw[j] <= 0; \
@@ -109,7 +125,6 @@ Helper macros to reset memories, GLBs, and PEs
 
 // Sets range of PEs to write
 `define PE_WRITE_RANGE(bottom, top) \
-    integer i; \
     for (i = bottom; i < top; i = i + 1) begin \
         r_pe_ready[i] <= 1; \
         r_pe_rw[i] <= 0; \
@@ -118,7 +133,6 @@ Helper macros to reset memories, GLBs, and PEs
 
 // Sets range of PEs to write with streaming
 `define PE_WRITE_STREAM_RANGE(bottom, top) \
-    integer i; \
     for (i = bottom; i < top; i = i + 1) begin \
         r_pe_ready[i] <= 1; \
         r_pe_rw[i] <= 0; \
@@ -160,7 +174,7 @@ Helper macros to reset memories, GLBs, and PEs
 Controller module 
 ============================================== */
 
-module controller #(
+module control #(
     parameter NUM_MEMS = `OUT_CTL_NUM_MEMS,                                     // Number of memories feeding the array       
     parameter NUM_PES = NUM_MEMS * NUM_MEMS,                                    // Number of PEs in the array
     parameter BURST_WIDTH = `OUT_ARB_BURST_WIDTH,                               // Burst signal data width
@@ -174,24 +188,24 @@ module controller #(
     
     output reg r_req,                                                           // Request signal to the arbiter
     
-    output reg [NUM_MEMS-1:0] r_mem_weight_rw                                   // Weight memory read/write signals
-    output reg [MEM_ADDR_WIDTH-1:0] r_mem_weight_addr [NUM_MEMS-1:0]            // Weight memory address signals
-    output reg [NUM_MEMS-1:0] r_mem_weight_ready                                // Weight memory ready signals
+    output reg [NUM_MEMS-1:0] r_mem_weight_rw,                                  // Weight memory read/write signals
+    output reg [MEM_ADDR_WIDTH-1:0] r_mem_weight_addr [NUM_MEMS-1:0],           // Weight memory address signals
+    output reg [NUM_MEMS-1:0] r_mem_weight_ready,                               // Weight memory ready signals
 
-    output reg [NUM_MEMS-1:0] r_mem_input_rw                                    // Input memory read/write signals
-    output reg [MEM_ADDR_WIDTH-1:0] r_mem_input_addr [NUM_MEMS-1:0]             // Input memory address signals
-    output reg [NUM_MEMS-1:0] r_mem_input_ready                                 // Input memory ready signals
+    output reg [NUM_MEMS-1:0] r_mem_input_rw,                                   // Input memory read/write signals
+    output reg [MEM_ADDR_WIDTH-1:0] r_mem_input_addr [NUM_MEMS-1:0],            // Input memory address signals
+    output reg [NUM_MEMS-1:0] r_mem_input_ready,                                // Input memory ready signals
 
-    output reg [NUM_MEMS-1:0] r_glb_rw                                          // GLB read/write signals
-    output reg [GLB_ADDR_WIDTH-1:0] r_glb_addr [NUM_MEMS-1:0]                   // GLB address signals
-    output reg [NUM_MEMS-1:0] r_glb_ready                                       // GLB ready signals
+    output reg [NUM_MEMS-1:0] r_glb_rw,                                         // GLB read/write signals
+    output reg [GLB_ADDR_WIDTH-1:0] r_glb_addr [NUM_MEMS-1:0],                  // GLB address signals
+    output reg [NUM_MEMS-1:0] r_glb_ready,                                      // GLB ready signals
 
     // These are ordered by PE delay group, though it'll be weird to connect wires properly
     // Specifically, the order from bit 0 to the highest bit is:
     // PE (11), (12, 21), (13, 22, 31), (14, 23, 32, 41), (24, 33, 42), (34, 43), (44)
     // (the parentheses enclose the delay group)
-    output reg [NUM_PES-1:0] r_pe_ready                                         // PE ready signals
-    output reg [NUM_PES-1:0] r_pe_rw                                            // Read data from mem or pass forward
+    output reg [NUM_PES-1:0] r_pe_ready,                                        // PE ready signals
+    output reg [NUM_PES-1:0] r_pe_rw,                                           // Read data from mem or pass forward
     output reg [NUM_PES-1:0] r_pe_stream                                        // Stream forwarded data or own data
 );
 
@@ -208,6 +222,7 @@ module controller #(
     reg r_transfer_done;
     reg [BURST_WIDTH:0] r_count;            // Intentionally oversized to handle overflow 
     reg [BURST_WIDTH:0] r_burst;            // Intentionally oversized to handle overflow
+    integer i, j, k;                        // index variables for mems, GLBs, etc.
 
     // State machine
     always @(posedge w_clock) begin
@@ -251,9 +266,9 @@ module controller #(
 
     // Register assignments
     always @(posedge w_clock) begin
+
          case (r_state)
             RESET: begin
-                integer i;
                 // Reset all memory and GLB addresses and ready signals
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
                     `RESET_MEMS(i)
@@ -261,7 +276,6 @@ module controller #(
                 end
 
                 // Reset all PEs
-                integer j;
                 for (j = 0; j < NUM_PES; j = j + 1) begin
                     `PE_RESET(j)
                 end
@@ -277,13 +291,11 @@ module controller #(
                 r_count <= r_count + 1;
 
                 // Reset all GLBs
-                integer i;
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
                     `GLB_RESET(i)
                 end
 
                 // Reset all PEs
-                integer j;
                 for (j = 0; j < NUM_PES; j = j + 1) begin
                     `PE_RESET(j)
                 end
@@ -294,7 +306,6 @@ module controller #(
                     r_transfer_done <= 0;
 
                     // Memories stay off while determining burst length
-                    integer k;
                     for (k = 0; k < NUM_MEMS; k = k + 1) begin
                         `RESET_MEMS(k)
                     end
@@ -307,14 +318,13 @@ module controller #(
                         r_burst <= r_burst;
                     end
 
-                    integer k;
                     for (k = 0; k < NUM_MEMS; k = k + 1) begin
                         if (r_count == 1) begin
-                            `MEM_WEIGHT_READ(k, 1)
-                            `MEM_INPUT_READ(k, 1)
+                            `MEM_WEIGHT_READ_ADDR(k, 0)
+                            `MEM_INPUT_READ_ADDR(k, 0)
                         end else begin
-                            `MEM_WEIGHT_READ(k, 0)
-                            `MEM_INPUT_READ(k, 0)
+                            `MEM_WEIGHT_READ_INCR(k)
+                            `MEM_INPUT_READ_INCR(k)
                         end
                     end
                 end
@@ -325,34 +335,31 @@ module controller #(
                 r_burst <= r_burst;
 
                 // Reset all GLBs
-                integer i;
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
                     `GLB_RESET(i)
                 end
 
                 // Get new mem active every cycle until all mems active
                 if (r_count < NUM_MEMS) begin
-                    integer j;
                     // Already active mems increment addresses
                     for (j = 0; j < r_count; j = j + 1) begin
-                        `MEM_WEIGHT_WRITE(j, 0)
-                        `MEM_INPUT_WRITE(j, 0)
+                        `MEM_WEIGHT_WRITE_INCR(j)
+                        `MEM_INPUT_WRITE_INCR(j)
                     end
                     // Just became active mem starts address at 0
-                    `MEM_WEIGHT_WRITE(r_count, 1)
-                    `MEM_INPUT_WRITE(r_count, 1)
+                    `MEM_WEIGHT_WRITE_ADDR(r_count, 0)
+                    `MEM_INPUT_WRITE_ADDR(r_count, 0)
                 end 
                 
                 // Keep memories active until data is distributed
                 else begin
-                    integer j;
                     for (j = 0; j < NUM_MEMS; j = j + 1) begin
                         if (r_mem_weight_addr[j] == r_burst) begin
                             r_mem_weight_ready[j] <= 0;
                             r_mem_input_ready[j] <= 0;
                         end else begin
-                            `MEM_WEIGHT_WRITE(j, 0)
-                            `MEM_INPUT_WRITE(j, 0)
+                            `MEM_WEIGHT_WRITE_INCR(j)
+                            `MEM_INPUT_WRITE_INCR(j)
                         end
                     end
                 end
@@ -399,7 +406,6 @@ module controller #(
                 r_burst <= r_burst;
 
                 // Reset all GLBs; keep PEs active; keep memories active
-                integer i;
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
                     `GLB_RESET(i)
                     `PE_READ_RANGE(0, 16)
@@ -408,8 +414,8 @@ module controller #(
                         r_mem_weight_ready[i] <= 0;
                         r_mem_input_ready[i] <= 0;
                     end else begin
-                        `MEM_WEIGHT_WRITE(i, 0)
-                        `MEM_INPUT_WRITE(i, 0)
+                        `MEM_WEIGHT_WRITE_INCR(i)
+                        `MEM_INPUT_WRITE_INCR(i)
                     end
                 end
 
@@ -434,13 +440,11 @@ module controller #(
                         `PE_READ_RANGE(2, 16)
 
                         `STALL_MEMS(0)
-                        integer i;
                         for (i = 1; i < NUM_MEMS; i = i + 1) begin
-                            `MEM_WEIGHT_READ(i, 0)
-                            `MEM_INPUT_READ(i, 0)
+                            `MEM_WEIGHT_READ_INCR(i)
+                            `MEM_INPUT_READ_INCR(i)
                         end
 
-                        integer k;
                         for (k = 1; k < NUM_MEMS; k = k + 1) begin
                             `GLB_RESET(k)
                         end
@@ -451,18 +455,15 @@ module controller #(
                         `PE_READ_STREAM_RANGE(3, 5)
                         `PE_READ_RANGE(5, 16)
                         
-                        integer i;
                         for (i = 0; i < 2; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
-                        integer j;
                         for (j = 2; j < NUM_MEMS; j = j + 1) begin
-                            `MEM_WEIGHT_READ(j, 0)
-                            `MEM_INPUT_READ(j, 0)
+                            `MEM_WEIGHT_READ_INCR(j)
+                            `MEM_INPUT_READ_INCR(j)
                         end
 
-                        integer k;
                         for (k = 1; k < NUM_MEMS; k = k + 1) begin
                             `GLB_STALL(k)
                         end
@@ -475,18 +476,15 @@ module controller #(
                         `PE_READ_STREAM_RANGE(6, 9)
                         `PE_READ_RANGE(9, 16)
 
-                        integer i;
                         for (i = 0; i < 3; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
-                        integer j;
                         for (j = 3; j < NUM_MEMS; j = j + 1) begin
-                            `MEM_WEIGHT_READ(j, 0)
-                            `MEM_INPUT_READ(j, 0)
+                            `MEM_WEIGHT_READ_INCR(j)
+                            `MEM_INPUT_READ_INCR(j)
                         end
 
-                        integer k;
                         for (k = 1; k < NUM_MEMS; k = k + 1) begin
                             `GLB_STALL(k)
                         end
@@ -502,13 +500,11 @@ module controller #(
                         `PE_READ_STREAM_RANGE(10, 13)
                         `PE_READ_RANGE(13, 16)
 
-                        integer i;
                         for (i = 0; i < NUM_MEMS; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
-                        `GLB_READ(0, 0)
-                        integer k;
+                        `GLB_READ_ADDR(0, 0)
                         for (k = 1; k < NUM_MEMS; k = k + 1) begin
                             // Switching to stalling now to prevent data from being overwritten
                             `GLB_STALL(k)
@@ -532,13 +528,12 @@ module controller #(
                         `PE_READ_STREAM(14)
                         `PE_READ(15)
                         
-                        integer i;
                         for (i = 0; i < NUM_MEMS; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
-                        `GLB_READ(0, 1)
-                        `GLB_READ(1, 0)
+                        `GLB_READ_ADDR(0, 1)
+                        `GLB_READ_ADDR(1, 0)
                         `GLB_STALL(2)
                         `GLB_STALL(3)
                     end
@@ -560,14 +555,13 @@ module controller #(
                         `PE_READ_STREAM(6)
                         `PE_READ_STREAM(15)
 
-                        integer i;
                         for (i = 0; i < NUM_MEMS; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
                         `GLB_STALL(0)
-                        `GLB_READ(1, 1)
-                        `GLB_READ(2, 0)
+                        `GLB_READ_ADDR(1, 1)
+                        `GLB_READ_ADDR(2, 0)
                         `GLB_STALL(3)
                     end
                     6: begin
@@ -588,15 +582,14 @@ module controller #(
                         `PE_READ_STREAM(3)
                         `PE_READ_STREAM(10)
 
-                        integer i;
                         for (i = 0; i < NUM_MEMS; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
-                        `GLB_READ(0, 2)
+                        `GLB_READ_ADDR(0, 2)
                         `GLB_STALL(1)
-                        `GLB_READ(2, 1)
-                        `GLB_READ(3, 0)
+                        `GLB_READ_ADDR(2, 1)
+                        `GLB_READ_ADDR(3, 0)
                     end
                     7: begin
                         `PE_RESET(0)
@@ -616,15 +609,14 @@ module controller #(
                         `PE_READ_STREAM(7)
                         `PE_READ_STREAM(13)
 
-                        integer i;
                         for (i = 0; i < NUM_MEMS; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
                         `GLB_STALL(0)
-                        `GLB_READ(1, 2)
+                        `GLB_READ_ADDR(1, 2)
                         `GLB_STALL(2)
-                        `GLB_READ(3, 1)
+                        `GLB_READ_ADDR(3, 1)
                     end
                     8: begin
                         `PE_RESET(0)
@@ -644,18 +636,16 @@ module controller #(
                         `PE_READ_STREAM(11)
                         `PE_READ_STREAM(15)
 
-                        integer i;
                         for (i = 0; i < NUM_MEMS; i = i + 1) begin
                             `STALL_MEMS(i)
                         end
 
-                        `GLB_READ(0, 3)
+                        `GLB_READ_ADDR(0, 3)
                         `GLB_STALL(1)
-                        `GLB_READ(2, 2)
+                        `GLB_READ_ADDR(2, 2)
                         `GLB_STALL(3)
                     end
                     9: begin
-                        integer i;
                         for (i = 0; i < 10; i = i + 1) begin
                             `PE_RESET(i)
                         end
@@ -666,18 +656,16 @@ module controller #(
                         `PE_READ_STREAM(13)
                         `PE_READ_STREAM(14)
 
-                        integer j; 
                         for (j = 0; j < NUM_MEMS; j = j + 1) begin
                             `STALL_MEMS(j)
                         end
 
                         `GLB_STALL(0)
-                        `GLB_READ(1, 3)
-                        `GLB_STALl(2)
-                        `GLB_READ(3, 2)
+                        `GLB_READ_ADDR(1, 3)
+                        `GLB_STALL(2)
+                        `GLB_READ_ADDR(3, 2)
                     end
                     10: begin
-                        integer i;
                         for (i = 0; i < 13; i = i + 1) begin
                             `PE_RESET(i)
                         end
@@ -685,24 +673,21 @@ module controller #(
                         `PE_WRITE_STREAM(14)
                         `PE_READ_STREAM(15)
 
-                        integer j;
                         for (j = 0; j < NUM_MEMS; j = j + 1) begin
                             `STALL_MEMS(j)
                         end
 
                         `GLB_STALL(0)
                         `GLB_STALL(1)
-                        `GLB_READ(2, 3)
+                        `GLB_READ_ADDR(2, 3)
                         `GLB_STALL(3)
                     end
                     11: begin
-                        integer i;
                         for (i = 0; i < 15; i = i + 1) begin
                             `PE_RESET(i)
                         end
                         `PE_WRITE_STREAM(15)
 
-                        integer j;
                         for (j = 0; j < NUM_MEMS; j = j + 1) begin
                             `STALL_MEMS(j)
                         end
@@ -710,19 +695,17 @@ module controller #(
                         `GLB_STALL(0)
                         `GLB_STALL(1)
                         `GLB_STALL(2)
-                        `GLB_READ(3, 3)
+                        `GLB_READ_ADDR(3, 3)
 
                         r_transfer_done <= 1;
                         r_count <= 0;
                     end
                     // Should never reach this state
                     default: begin
-                        integer i;
                         for (i = 0; i < 16; i = i + 1) begin
                             `PE_RESET(i)
                         end
 
-                        integer j;
                         for (j = 0; j < NUM_MEMS; j = j + 1) begin
                             `STALL_MEMS(j)
                             `GLB_STALL(j)
@@ -738,13 +721,11 @@ module controller #(
                     r_count <= r_count + 1;
 
                     // Reset all MEMs
-                    integer i;
                     for (i = 0; i < NUM_MEMS; i = i + 1) begin
                         `STALL_MEMS(i)
                     end
 
                     // Reset all PEs
-                    integer j;
                     for (j = 0; j < NUM_PES; j = j + 1) begin
                         `PE_RESET(j)
                     end
@@ -755,7 +736,6 @@ module controller #(
                         r_transfer_done <= 0;
 
                         // GLBs stay off while determining burst length
-                        integer k;
                         for (k = 0; k < NUM_MEMS; k = k + 1) begin
                             `GLB_STALL(k)
                         end
@@ -768,12 +748,11 @@ module controller #(
                             r_burst <= r_burst;
                         end
 
-                        integer k;
                         for (k = 0; k < NUM_MEMS; k = k + 1) begin
                             if (r_count == 1) begin
-                                `GLB_READ_INCR(k, 1)
+                                `GLB_READ_ADDR(k, 0)
                             end else begin
-                                `GLB_READ_INCR(k, 0)
+                                `GLB_READ_INCR(k)
                             end
                         end
                     end
