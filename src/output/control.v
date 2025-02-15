@@ -237,27 +237,32 @@ module control #(
                 LOAD: if (r_transfer_done) begin
                     r_state <= DISTRIBUTE;
                     r_transfer_done <= 0;
+                    r_count <= 0;
                 end
                 // Finish distributing data to last PE before computing
                 DISTRIBUTE: if (r_transfer_done) begin
                     r_state <= COMPUTE;
                     r_transfer_done <= 0;
+                    r_count <= 0;
                 end
                 // Finish computing in earliest PE before cleanup
                 COMPUTE: if (r_transfer_done) begin
                     r_state <= CLEANUP;
                     r_transfer_done <= 0;
+                    r_count <= 0;
                 end
                 // Finish cleanup for all PEs before unloading GLBs
                 CLEANUP: if (r_transfer_done) begin
                     r_state <= UNLOAD;
                     r_transfer_done <= 0;
+                    r_count <= 0;
                 end
                 // Finish unloading GLBs before resetting 
                 // (waiting for grant within state logic)
                 UNLOAD: if (r_transfer_done) begin
                     r_state <= RESET;
                     r_transfer_done <= 0;
+                    r_count <= 0;
                 end
                 default: r_state <= RESET;
             endcase
@@ -312,9 +317,9 @@ module control #(
                 end 
                 // Step 2 - load data into memories
                 else begin
-                    if (r_count == r_burst) begin
+                    // +1 offset for burst capture at start
+                    if (r_count == r_burst + 1) begin
                         r_transfer_done <= 1;
-                        r_count <= 0;
                         r_burst <= r_burst;
                     end
 
@@ -393,7 +398,6 @@ module control #(
                     6: begin
                         `PE_READ_RANGE(0, 16)
                         r_transfer_done <= 1;
-                        r_count <= 0;
                     end
                     default: begin
                         `PE_RESET_RANGE(0, 16)
@@ -698,7 +702,6 @@ module control #(
                         `GLB_READ_ADDR(3, 3)
 
                         r_transfer_done <= 1;
-                        r_count <= 0;
                     end
                     // Should never reach this state
                     default: begin
@@ -744,7 +747,6 @@ module control #(
                     else begin
                         if (r_count == r_burst) begin
                             r_transfer_done <= 1;
-                            r_count <= 0;
                             r_burst <= r_burst;
                         end
 
