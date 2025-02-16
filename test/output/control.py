@@ -74,6 +74,57 @@ class ControlTest:
         await RisingEdge(self.dut.w_clock)
         await Timer(1, units="ns")
 
+    def log_signals(
+        self,
+        debug_info: str = "",
+        show_glb: bool = False,
+        show_w_mem: bool = False,
+        show_i_mem: bool = False,
+        show_pe: bool = False,
+        idx: int = -1,
+    ):
+        """
+        Logs all control signals for debugging
+
+        Args:
+            debug_info: str - Debug information to append to log
+            show_glb: bool - Show GLB signals
+            show_w_mem: bool - Show weight memory signals
+            show_i_mem: bool - Show input memory signals
+            idx: int - Index of memory/GLB/PE to show signals for
+        """
+        log_str = f"{debug_info}\nr_state: {itos(self.dut.r_state.value.integer)}\nr_count: {self.dut.r_count.value.integer}\nr_req: {self.dut.r_req.value}\nw_grant: {self.dut.w_grant.value}\nr_done: {self.dut.r_transfer_done.value}\nr_burst: {self.dut.r_burst.value.integer}\n"
+
+        if show_glb:
+            if idx > -1:
+                log_str += f"r_glb_ready[{idx}]: {self.dut.r_glb_ready[idx].value}\nr_glb_rw[{idx}]: {self.dut.r_glb_rw[idx].value}\nr_glb_addr[{idx}]: {self.dut.r_glb_addr[idx].value}\n"
+            else:
+                for i in range(NUM_MEMS):
+                    log_str += f"r_glb_ready[{i}]: {self.dut.r_glb_ready[i].value}\nr_glb_rw[{i}]: {self.dut.r_glb_rw[i].value}\nr_glb_addr[{i}]: {self.dut.r_glb_addr[i].value}\n"
+
+        if show_w_mem:
+            if idx > -1:
+                log_str += f"r_mem_weight_ready[{idx}]: {self.dut.r_mem_weight_ready[idx].value}\nr_mem_weight_rw[{idx}]: {self.dut.r_mem_weight_rw[idx].value}\nr_mem_weight_addr[{idx}]: {self.dut.r_mem_weight_addr[idx].value}\n"
+            else:
+                for i in range(NUM_MEMS):
+                    log_str += f"r_mem_weight_ready[{i}]: {self.dut.r_mem_weight_ready[i].value}\nr_mem_weight_rw[{i}]: {self.dut.r_mem_weight_rw[i].value}\nr_mem_weight_addr[{i}]: {self.dut.r_mem_weight_addr[i].value}\n"
+
+        if show_i_mem:
+            if idx > -1:
+                log_str += f"r_mem_input_ready[{idx}]: {self.dut.r_mem_input_ready[idx].value}\nr_mem_input_rw[{idx}]: {self.dut.r_mem_input_rw[idx].value}\nr_mem_input_addr[{idx}]: {self.dut.r_mem_input_addr[idx].value}\n"
+            else:
+                for i in range(NUM_MEMS):
+                    log_str += f"r_mem_input_ready[{i}]: {self.dut.r_mem_input_ready[i].value}\nr_mem_input_rw[{i}]: {self.dut.r_mem_input_rw[i].value}\nr_mem_input_addr[{i}]: {self.dut.r_mem_input_addr[i].value}\n"
+
+        if show_pe:
+            if idx > -1:
+                log_str += f"r_pe_ready[{idx}]: {self.dut.r_pe_ready[idx].value}\nr_pe_rw[{idx}]: {self.dut.r_pe_rw[idx].value}\nr_pe_stream[{idx}]: {self.dut.r_pe_stream[idx].value}\n"
+            else:
+                for i in range(NUM_PES):
+                    log_str += f"r_pe_ready[{i}]: {self.dut.r_pe_ready[i].value}\nr_pe_rw[{i}]: {self.dut.r_pe_rw[i].value}\nr_pe_stream[{i}]: {self.dut.r_pe_stream[i].value}\n"
+
+        self.dut._log.info(log_str)
+
     def check_state(self, state: str, debug_info: str = ""):
         """
         Checks if the state of the controller is as expected
@@ -268,7 +319,35 @@ async def test_load_state(dut):
 async def test_distribute_state(dut):
     tb = ControlTest(dut)
     await tb.reset()
-    assert 0 == 1, "Temporary placeholder"
+
+    # Transition from reset to load state
+    dut.w_grant.value = 1
+    dut.w_burst.value = BURST_WRITE - 1
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+
+    # Transition from load to distribute state
+    for i in range(BURST_WRITE + 1):
+        await RisingEdge(dut.w_clock)
+        await Timer(1, units="ns")
+
+        if i == BURST_WRITE:
+            tb.log_signals()
+
+    await RisingEdge(dut.w_clock)  # extra delay for first cycle of distribute
+    await Timer(1, units="ns")
+    tb.log_signals()
+
+    await RisingEdge(dut.w_clock)  # extra delay for first cycle of distribute
+    await Timer(1, units="ns")
+    tb.log_signals()
+
+    # Verify 6 cycles of distribute state
+    # All GLBs should be stalled
+    # Memories should activate one at a time.
+    # Verify each delay group of PEs
+
+    assert 1 == 0, "Temporary placeholder"
 
 
 # Test compute state

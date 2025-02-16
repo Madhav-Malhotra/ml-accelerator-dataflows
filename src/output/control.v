@@ -293,7 +293,7 @@ module control #(
             end
             LOAD: begin
                 r_req <= 1;
-                r_count <= r_count + 1;
+                if (r_transfer_done == 0) r_count <= r_count + 1;
 
                 // Reset all GLBs
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
@@ -336,7 +336,7 @@ module control #(
             end
             DISTRIBUTE: begin
                 r_req <= 0;
-                r_count <= r_count + 1;
+                if (r_transfer_done == 0) r_count <= r_count + 1;
                 r_burst <= r_burst;
 
                 // Reset all GLBs
@@ -406,7 +406,7 @@ module control #(
 
             end
             COMPUTE: begin
-                r_count <= r_count + 1;
+                if (r_transfer_done == 0) r_count <= r_count + 1;
                 r_burst <= r_burst;
 
                 // Reset all GLBs; keep PEs active; keep memories active
@@ -426,11 +426,10 @@ module control #(
                 // Transition to cleanup after first PE completes
                 if (r_mem_weight_addr[0] == r_burst) begin
                     r_transfer_done <= 1;
-                    r_count <= 0;
                 end
             end
             CLEANUP: begin
-                r_count <= r_count + 1;
+                if (r_transfer_done == 0) r_count <= r_count + 1;
                 r_burst <= r_burst;
                 r_transfer_done <= 0;
 
@@ -721,7 +720,7 @@ module control #(
                 r_req <= 1;
 
                 if (w_grant) begin
-                    r_count <= r_count + 1;
+                    if (r_transfer_done == 0) r_count <= r_count + 1;
 
                     // Reset all MEMs
                     for (i = 0; i < NUM_MEMS; i = i + 1) begin
