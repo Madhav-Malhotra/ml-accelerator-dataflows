@@ -96,10 +96,45 @@ async def test_round_robin_arbitration(dut):
         await arbiter.check_grants(expected_grant)
 
     # Test case 5: Rotating priority
-    # await arbiter.drive_requests("0011")
-    # await arbiter.check_grants(2)  # Wait for grant to be asserted
-    # await arbiter.drive_requests("0011")
-    # await arbiter.check_grants(1)  # Wait for grant to be asserted
+    
+      # Test case 5: Rotating priority
+    await arbiter.reset()
+    
+    # First request
+    await arbiter.drive_requests("0011")
+    print(f"\nFirst Request:")
+    print(f"Initial - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}")
+    
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    print(f"After 1st cycle - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}, Burst: {dut.r_burst.value}, load: {dut.r_load.value}")
+    
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    print(f"After 2nd cycle - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}, Burst: {dut.r_burst.value}, load: {dut.r_load.value}")
+    
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    print(f"After 3rd cycle - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}, Burst: {dut.r_burst.value}, load: {dut.r_load.value}")
+    await arbiter.check_grants(2)
+    
+    # Second request
+    print(f"\nSecond Request:")
+    await arbiter.drive_requests("0011")
+    print(f"Initial - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}")
+    
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    print(f"After 1st cycle - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}")
+    
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    print(f"After 2nd cycle - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}")
+    
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+    print(f"After 3rd cycle - State: {dut.r_state.value}, Req: {dut.r_req.value}, Grant: {dut.r_grant.value}")
+    await arbiter.check_grants(1)
 
 
 @cocotb.test()
@@ -107,12 +142,24 @@ async def test_loading_behavior(dut):
     arbiter = ArbiterDriver(dut)
     await arbiter.reset()
 
-    # Test loading behavior
+    # Transaction 1
     await arbiter.drive_requests("0001")
-    await arbiter.check_grants(1)  # Wait for grant to be asserted
-    await Timer(20, units="ns")  # Simulate some processing time
+    for _ in range(3):
+        await RisingEdge(dut.w_clock)
+        await Timer(1, units="ns")
+    await arbiter.check_grants(1)
+
+# Clear request for one cycle
+    await arbiter.drive_requests("0")
+    await RisingEdge(dut.w_clock)
+    await Timer(1, units="ns")
+
+# Transaction 2
     await arbiter.drive_requests("0010")
-    await arbiter.check_grants(2)  # Wait for grant to be asserted
+    for _ in range(3):
+        await RisingEdge(dut.w_clock)
+        await Timer(1, units="ns")
+    await arbiter.check_grants(2)
 
     # Check if the load register is updated correctly
     assert (
@@ -128,16 +175,36 @@ async def test_unloading_behavior(dut):
     # Simulate loading of all cores
     for i in range(NUM_CORES):
         await arbiter.drive_requests(1 << i)
-        await arbiter.check_grants(1 << i)  # Wait for grant to be asserted
+        # Wait for full state transition sequence
+        for _ in range(3):  # LOCK -> ARBITRATE -> TRANSFER
+            await RisingEdge(dut.w_clock)
+            await Timer(1, units="ns")
+        await arbiter.check_grants(1 << i)
+        
+        # Wait for burst transfer to complete
+        for _ in range(dut.r_burst.value.integer):
+            await RisingEdge(dut.w_clock)
+            await Timer(1, units="ns")
 
     # Test unloading behavior
-    await arbiter.drive_requests("1" * NUM_CORES)  # Drive all requests
+    await arbiter.drive_requests("1" * NUM_CORES)
     for i in range(NUM_CORES):
-        expected_grant = 1 << ((i + NUM_CORES - 1) % NUM_CORES)  # Rotate priority
-        await arbiter.check_grants(expected_grant)  # Wait for grant to be asserted
-        await Timer(20, units="ns")  # Simulate some unloading time
+        # Wait for state transitions
+        for _ in range(3):  # LOCK -> ARBITRATE -> TRANSFER
+            await RisingEdge(dut.w_clock)
+            await Timer(1, units="ns")
+            
+        # The expected grant should be the MSB of the remaining requests
+        # For unloading, it will be the highest numbered core first
+        expected_grant = 1 << (NUM_CORES - 1 - i)
+        await arbiter.check_grants(expected_grant)
+        
+        # Wait for burst transfer to complete
+        for _ in range(dut.r_burst.value.integer):
+            await RisingEdge(dut.w_clock)
+            await Timer(1, units="ns")
+            
+        print(f"Cycle {i} - State: {dut.r_state.value}, Load: {dut.r_load.value}, Burst: {dut.r_burst.value}")
 
-    # Check if the load register is updated correctly
-    assert (
-        dut.r_load.value.integer == 0
-    ), f"Load register mismatch after unloading. Expected 0, got {dut.r_load.value.integer}"
+    assert dut.r_load.value.integer == 0, f"Load register mismatch after unloading. Expected 0, got {dut.r_load.value.integer}"
+    
