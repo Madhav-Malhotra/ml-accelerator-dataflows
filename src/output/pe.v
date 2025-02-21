@@ -82,5 +82,12 @@ module pe #(
         {OUT_PE_FWD_WIDTH{1'bz}} :
         // If stream, output fwd_in. Else (write w/o stream), output scratchpad.
         (w_stream) ? r_fwd : r_scratch; 
+
+    `ifdef COCOTB_SIM
+        initial begin
+            $dumpvars (0, pe);
+            #1;
+        end
+    `endif
         
 endmodule

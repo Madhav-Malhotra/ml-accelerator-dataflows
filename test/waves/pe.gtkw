@@ -1,0 +1,100 @@
+[*] *
+[*] * GTKWave Analyzer save file - Auto-generated
+[*] * Generated on Thu Feb 20 22:25:36 2025
+[*] *
+[dumpfile] "/home/mdvmlhtr/ml-accelerator-dataflows/test/waves/pe.fst"
+[dumpfile_mtime] "Fri Feb 21 03:25:36 2025"
+[savefile] "/home/mdvmlhtr/ml-accelerator-dataflows/test/waves/pe.gtkw"
+[timestart] 0
+[size] 1900 1000
+[pos] -1 -1
+*0.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[signals_width] 250
+[sst_expanded] 1
+@800200
+-Parameters
+@24
+pe.OUT_PE_WEIGHT_WIDTH
+pe.OUT_PE_INPUT_WIDTH
+pe.OUT_PE_SCRATCH_WIDTH
+pe.OUT_PE_FWD_WIDTH
+@1000200
+-Parameters
+@800200
+-Inputs
+@28
+[color] 3
+pe.w_clock
+[color] 3
+pe.w_ready
+[color] 3
+pe.w_rw
+[color] 3
+pe.w_stream
+@22
+[color] 3
+pe.w_weight[7:0]
+[color] 3
+pe.w_input[7:0]
+[color] 3
+pe.w_fwd_in[21:0]
+[color] 3
+pe.w_out[21:0]
+[color] 3
+pe.w_wgt_out[7:0]
+[color] 3
+pe.w_inp_out[7:0]
+@28
+[color] 3
+pe.fwd_in
+[color] 3
+pe.scratchpad
+@1000200
+-Inputs
+@800200
+-Outputs
+@28
+[color] 1
+pe.w_clock
+[color] 1
+pe.w_ready
+[color] 1
+pe.w_rw
+[color] 1
+pe.w_stream
+@22
+[color] 1
+pe.w_weight[7:0]
+[color] 1
+pe.w_input[7:0]
+[color] 1
+pe.w_fwd_in[21:0]
+[color] 1
+pe.w_out[21:0]
+[color] 1
+pe.w_wgt_out[7:0]
+[color] 1
+pe.w_inp_out[7:0]
+@28
+[color] 1
+pe.fwd_in
+[color] 1
+pe.scratchpad
+@1000200
+-Outputs
+@800200
+-Internals
+@22
+[color] 5
+pe.r_wgt[7:0]
+[color] 5
+pe.r_inp[7:0]
+[color] 5
+pe.r_fwd[21:0]
+[color] 5
+pe.r_scratch[21:0]
+[color] 5
+pe.r_pipeline[21:0]
+@1000200
+-Internals
+[pattern_trace] 1

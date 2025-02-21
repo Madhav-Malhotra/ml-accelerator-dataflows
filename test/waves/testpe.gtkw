@@ -1,0 +1,20 @@
+[*]
+[*] GTKWave Analyzer v3.3.116 (w)1999-2023 BSI
+[*] Fri Feb 21 02:34:08 2025
+[*]
+[dumpfile] "/home/mdvmlhtr/ml-accelerator-dataflows/test/waves/pe.fst"
+[dumpfile_mtime] "Fri Feb 21 01:25:09 2025"
+[dumpfile_size] 2404
+[savefile] "/home/mdvmlhtr/ml-accelerator-dataflows/test/waves/testpe.gtkw"
+[timestart] 0
+[size] 1000 600
+[pos] -327 -324
+*-14.000000 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1 -1
+[sst_width] 276
+[signals_width] 142
+[sst_expanded] 1
+[sst_vpaned_height] 157
+@22
+pe.w_inp_out[7:0]
+[pattern_trace] 1
+[pattern_trace] 0
