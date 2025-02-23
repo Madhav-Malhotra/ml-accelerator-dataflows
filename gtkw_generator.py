@@ -15,6 +15,123 @@ from datetime import datetime
 from vcd.gtkw import GTKWSave, GTKWColor
 
 
+def evaluate_parameter_expression(expr: str, param_values: dict) -> int:
+    """Evaluate a parameter expression using known parameter values."""
+    try:
+        # Clean up the expression first - remove any trailing comments and whitespace
+        expr = re.sub(r"//.*$", "", expr).strip()
+
+        # Replace parameter references with their values
+        for param, value in param_values.items():
+            expr = re.sub(rf"\b{param}\b", str(value), expr)
+            expr = expr.replace(f"`{param}", str(value))
+
+        # Handle $clog2 function
+        if "$clog2" in expr:
+            if expr[-1] != ")":
+                expr += ")"
+
+            # Get everything between the parentheses after $clog2
+            clog2_match = re.search(r"\$clog2\s*\((.*?)\)", expr)
+            if clog2_match:
+                arg_expr = clog2_match.group(1).strip()
+                # First evaluate the argument expression recursively
+                try:
+                    arg_val = evaluate_parameter_expression(arg_expr, param_values)
+                    if arg_val > 0:
+                        import math
+
+                        clog2_val = math.ceil(math.log2(arg_val))
+                        # Replace the entire $clog2(...) expression with the result
+                        expr = expr.replace(clog2_match.group(0), str(clog2_val))
+                    else:
+                        raise ValueError(
+                            f"Invalid $clog2 argument: {arg_expr} evaluates to {arg_val}"
+                        )
+                except Exception as e:
+                    raise ValueError(
+                        f"Failed to evaluate $clog2 argument: {arg_expr}, error: {str(e)}"
+                    )
+
+        # Handle basic arithmetic
+        # First remove any remaining backticks
+        expr = expr.replace("`", "")
+        # Replace operators with spaces around them for reliable splitting
+        expr = re.sub(r"([*/+-])", r" \1 ", expr)
+        # Split into tokens and evaluate
+        tokens = [t.strip() for t in expr.split() if t.strip()]
+
+        if len(tokens) == 1:
+            return int(tokens[0])
+
+        result = int(tokens[0])
+        op_map = {
+            "+": int.__add__,
+            "-": int.__sub__,
+            "*": int.__mul__,
+            "/": int.__floordiv__,
+        }
+
+        i = 1
+        while i < len(tokens):
+            if tokens[i] in op_map:
+                op = op_map[tokens[i]]
+                next_val = int(tokens[i + 1])
+                result = op(result, next_val)
+                i += 2
+            else:
+                raise ValueError(f"Invalid operator in expression: {expr}")
+
+        return result
+
+    except Exception as e:
+        raise ValueError(f"Failed to evaluate expression '{expr}': {str(e)}")
+
+
+def extract_parameters(content: str, params_dict: dict) -> tuple[list, dict]:
+    """Extract and evaluate parameters from Verilog content."""
+    # First pass: collect all parameters and their expressions
+    params = []
+    param_expressions = {}
+    param_pattern = r"parameter\s+(\w+)\s*=\s*([^,;\n\)]+)"
+
+    for match in re.finditer(param_pattern, content):
+        param_name = match.group(1)
+        param_expr = match.group(2).strip()
+        params.append(param_name)
+        param_expressions[param_name] = param_expr
+
+    # Start with macro definitions from params_dict
+    param_values = {}
+    for name, value in params_dict.items():
+        param_values[name] = value
+
+    # Evaluate parameters in order of dependencies
+    remaining_params = set(param_expressions.keys())
+    while remaining_params:
+        resolved_any = False
+        for param in list(remaining_params):
+            expr = param_expressions[param]
+            try:
+                value = evaluate_parameter_expression(expr, param_values)
+                param_values[param] = value
+                remaining_params.remove(param)
+                resolved_any = True
+            except ValueError:
+                continue
+
+        if not resolved_any and remaining_params:
+            # If we couldn't resolve any parameters in this pass,
+            # we have circular dependencies or invalid expressions
+            for param in remaining_params:
+                print(
+                    f"Warning: Could not evaluate parameter {param} = {param_expressions[param]}"
+                )
+            break
+
+    return params, param_values
+
+
 def parse_verilog_file(verilog_path: str, params_path: str) -> dict:
     """Parse a Verilog file to extract module parameters and signals."""
     with open(verilog_path, "r") as f:
@@ -31,25 +148,8 @@ def parse_verilog_file(verilog_path: str, params_path: str) -> dict:
 
     module_name = module_match.group(1)
 
-    # Extract parameters
-    params = []
-    param_pattern = r"parameter\s+(\w+)\s*=\s*(.+?)(?:,|\)|\n)"
-    for match in re.finditer(param_pattern, content):
-        param_name = match.group(1)
-        params.append(param_name)
-
-    # Also search for parameters defined with `define
-    define_params = {}
-    define_pattern = r"`(\w+)"
-    for match in re.finditer(define_pattern, content):
-        define_name = match.group(1)
-        if (
-            define_name not in ["include", "ifdef", "endif"]
-            and define_name not in define_params.keys()
-        ):
-            # Intentionallly let this fail if parameter isn't defined
-            # Something's very wrong if this happens
-            define_params[define_name] = params_dict[define_name]
+    # Extract and evaluate parameters
+    params, param_values = extract_parameters(content, params_dict)
 
     # Extract input and output signals
     signals = []
@@ -91,7 +191,7 @@ def parse_verilog_file(verilog_path: str, params_path: str) -> dict:
     return {
         "module_name": module_name,
         "parameters": params,
-        "define_parameters": define_params,
+        "define_parameters": param_values,
         "signals": signals,
         "internal_signals": internal_signals,
     }

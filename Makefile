@@ -46,15 +46,18 @@ include $(shell cocotb-config --makefiles)/Makefile.sim
 
 # Ensure parameters.vh is always up-to-date
 $(PARAMS_VH):
+	$(MAKE) clean_local
 	@echo "Updating Verilog parameters..."
 	@python3 $(PARAMS_SCRIPT)
 
 # Need to call this target so that parameters.vh is generated before running test
 test: $(PARAMS_VH)
 	$(MAKE) SIM=$(SIM) MOD_TYPE=$(MOD_TYPE) MOD=$(MOD) 
-	@if [ -f dump.fst ]; then \
-		mv dump.fst $(WAVES_DIR)/$(MOD).fst; \
-		echo "Moved dump.fst to $(WAVES_DIR)/$(MOD).fst"; \
+	@if [ -f $(BUILD_DIR)/$(MOD).fst ]; then \
+		mv $(BUILD_DIR)/$(MOD).fst $(WAVES_DIR)/$(MOD).fst; \
+		echo "Moved $(BUILD_DIR)/$(MOD).fst to $(WAVES_DIR)/$(MOD).fst"; \
+	fi else \
+		echo "Error: Failed to find dumpfile $(BUILD_DIR)/$(MOD).fst"; \
 	fi
 
 # Generate GTKW file for module
