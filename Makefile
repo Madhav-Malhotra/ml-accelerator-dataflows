@@ -56,7 +56,7 @@ test: $(PARAMS_VH)
 	@if [ -f $(BUILD_DIR)/$(MOD).fst ]; then \
 		mv $(BUILD_DIR)/$(MOD).fst $(WAVES_DIR)/$(MOD).fst; \
 		echo "Moved $(BUILD_DIR)/$(MOD).fst to $(WAVES_DIR)/$(MOD).fst"; \
-	fi else \
+	else \
 		echo "Error: Failed to find dumpfile $(BUILD_DIR)/$(MOD).fst"; \
 	fi
 

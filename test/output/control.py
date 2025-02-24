@@ -56,6 +56,43 @@ def itos(num: int) -> str:
     }[num]
 
 
+# PE (11), (12, 21), (13, 22, 31), (14, 23, 32, 41), (24, 33, 42), (34, 43), (44)
+#     0     1    2    3   4   5     6   7   8   9     10  11  12    13  14    15
+def pe_idx_to_group(idx: int) -> int:
+    """Maps PE index to delay group"""
+    return {
+        0: 0,
+        1: 1,
+        2: 1,
+        3: 2,
+        4: 2,
+        5: 2,
+        6: 3,
+        7: 3,
+        8: 3,
+        9: 3,
+        10: 4,
+        11: 4,
+        12: 4,
+        13: 5,
+        14: 5,
+        15: 6,
+    }[idx]
+
+
+def group_to_pe_idx(group: int) -> list[int]:
+    """Maps delay group to PE indices"""
+    return {
+        0: [0],
+        1: [1, 2],
+        2: [3, 4, 5],
+        3: [6, 7, 8, 9],
+        4: [10, 11, 12],
+        5: [13, 14],
+        6: [15],
+    }[group]
+
+
 class ControlTest:
     def __init__(self, dut):
         self.dut = dut
@@ -164,6 +201,39 @@ class ControlTest:
             ), f"Expected r_pe_ready[{idx}] to be 0, got {self.dut.r_pe_ready[idx].value}. {debug_info}"
         else:
             raise ValueError(f"Module must be one of 'M', 'G', 'P'. Got {module}")
+
+    def check_stall(self, module: str, idx: int, debug_info: str = ""):
+        """
+        Checks if module at specified idx is stalled
+
+        Args:
+            module: str - Module to check (M = mems, G = GLB)
+            idx: int - Index of module
+            debug_info: str - Debug information to append to assert error
+        """
+
+        if module == "M":
+            assert (
+                self.dut.r_mem_weight_ready[idx].value == 1
+            ), f"Expected r_mem_weight_ready[{idx}] to be 1, got {self.dut.r_mem_weight_ready[idx].value}. {debug_info}"
+            assert not_resolvable(
+                self.dut.r_mem_weight_rw[idx].value.binstr
+            ), f"Expected r_mem_weight_rw[{idx}] to be 'z', got {self.dut.r_mem_weight_rw[idx].value.binstr}. {debug_info}"
+            assert (
+                self.dut.r_mem_input_ready[idx].value == 1
+            ), f"Expected r_mem_input_ready[{idx}] to be 1, got {self.dut.r_mem_input_ready[idx].value}. {debug_info}"
+            assert not_resolvable(
+                self.dut.r_mem_input_rw[idx].value.binstr
+            ), f"Expected r_mem_input_rw[{idx}] to be 'z', got {self.dut.r_mem_input_rw[idx].value.binstr}. {debug_info}"
+        elif module == "G":
+            assert (
+                self.dut.r_glb_ready[idx].value == 1
+            ), f"Expected r_glb_ready[{idx}] to be 1, got {self.dut.r_glb_ready[idx].value}. {debug_info}"
+            assert not_resolvable(
+                self.dut.r_glb_rw[idx].value.binstr
+            ), f"Expected r_glb_rw[{idx}] to be 'z', got {self.dut.r_glb_rw[idx].value.binstr}. {debug_info}"
+        else:
+            raise ValueError(f"Module must be one of 'M', 'G'. Got {module}")
 
     def check_mem_control(
         self, module: str, idx: int, rw: bool, addr: int, debug_info: str = ""
@@ -293,19 +363,20 @@ async def test_load_state(dut):
         await Timer(1, units="ns")
 
         # Check internal signals
-        tb.check_state("LOAD", f"Cycle {i}")
+        tb.check_state("LOAD", debug_info=f"Cycle {i}")
         assert (
             dut.r_req.value == 1
         ), f"Expected r_req to be 1, got {dut.r_req.value}. Cycle {i}"
 
         # Check memory outputs
         for j in range(NUM_MEMS):
-            tb.check_mem_control("M", j, 1, i, f"Cycle {i}")
-            tb.check_reset("G", j, f"Cycle {i}")
+            # Module type, memory index, read/write, address
+            tb.check_mem_control("M", j, 1, i, debug_info=f"Cycle {i}")
+            tb.check_reset("G", j, debug_info=f"Cycle {i}")
 
         # Check PE outputs
         for j in range(NUM_PES):
-            tb.check_reset("P", j, f"Cycle {i}")
+            tb.check_reset("P", j, debug_info=f"Cycle {i}")
 
     # Check if state transitions to distribute
     dut.w_grant.value = 0
@@ -326,28 +397,43 @@ async def test_distribute_state(dut):
     await RisingEdge(dut.w_clock)
     await Timer(1, units="ns")
 
-    # Transition from load to distribute state
-    for i in range(BURST_WRITE + 1):
+    # Skip through load state
+    for _ in range(BURST_WRITE + 1):
         await RisingEdge(dut.w_clock)
         await Timer(1, units="ns")
 
-        if i == BURST_WRITE:
-            tb.log_signals()
-
-    await RisingEdge(dut.w_clock)  # extra delay for first cycle of distribute
+    # Transition from load state to distribute state
+    await RisingEdge(dut.w_clock)
     await Timer(1, units="ns")
-    tb.log_signals()
+    dut.w_grant.value = 0
 
-    await RisingEdge(dut.w_clock)  # extra delay for first cycle of distribute
+    # Verify 7 cycles of distribute state
+    for i in range(7):
+        await RisingEdge(dut.w_clock)  # extra delay for first cycle of distribute
+        await Timer(1, units="ns")
+
+        # All GLBs should be stalled
+        for j in range(NUM_MEMS):
+            tb.check_stall("G", j, debug_info=f"Cycle {i}")
+
+        # Memories should activate one at a time
+        for j in range(min(i, NUM_MEMS - 1)):
+            # Module type, memory index, read/write, address
+            tb.check_mem_control("M", j, 0, i - j, debug_info=f"Cycle {i}")
+
+        # Verify each delay group of PEs
+        for active in range(i + 1):
+            for pe in group_to_pe_idx(active):
+                # PE index, read/write, stream
+                tb.check_pe_control(pe, 1, False, debug_info=f"Cycle {i}")
+        for inactive in range(i + 1, 7):
+            for pe in group_to_pe_idx(inactive):
+                tb.check_reset("P", pe, debug_info=f"Cycle {i}")
+
+    # Check if state transitions to compute
+    await RisingEdge(dut.w_clock)
     await Timer(1, units="ns")
-    tb.log_signals()
-
-    # Verify 6 cycles of distribute state
-    # All GLBs should be stalled
-    # Memories should activate one at a time.
-    # Verify each delay group of PEs
-
-    assert 1 == 0, "Temporary placeholder"
+    tb.check_state("COMPUTE")
 
 
 # Test compute state
@@ -355,7 +441,7 @@ async def test_distribute_state(dut):
 async def test_compute_state(dut):
     tb = ControlTest(dut)
     await tb.reset()
-    assert 0 == 0, "Temporary placeholder"
+    assert 0 == 1, "Temporary placeholder"
 
 
 # Test cleanup state

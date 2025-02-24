@@ -341,7 +341,7 @@ module control #(
 
                 // Reset all GLBs
                 for (i = 0; i < NUM_MEMS; i = i + 1) begin
-                    `GLB_RESET(i)
+                    `GLB_STALL(i)
                 end
 
                 // Get new mem active every cycle until all mems active
